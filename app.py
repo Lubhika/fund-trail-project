@@ -152,6 +152,9 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    if session.get('role') in VIEW_ONLY_ROLES:
+        flash("View-only users cannot upload files.", "warning")
+        return redirect('/index')
     file = request.files['file']
     if file:
         new_file = UploadedFile(
@@ -168,6 +171,9 @@ def upload_file():
 def upload_excel():
     if 'username' not in session:
         return redirect('/login')
+    if session.get('role') in VIEW_ONLY_ROLES:
+        flash("View-only users cannot upload complaints.", "warning")
+        return redirect('/index')
 
     file = request.files['excel_file']
     if not file or not file.filename.endswith('.xlsx'):
@@ -227,6 +233,37 @@ def upload_excel():
             try: return float(str(value).replace(',', '').strip())
             except: return 0.0
 
+        def clean_location(value):
+            """Normalize ATM location strings and strip common prefixes."""
+            if pd.isna(value) or value is None:
+                return None
+            s = str(value).strip()
+            prefixes = [
+                "Place of ATM :-",
+                "Place of ATM :",
+                "Place/Location of ATM :",
+                "Place/Location of ATM",
+                "Place / Location of ATM",
+                "Place of ATM",
+                "Place/Location",
+            ]
+            for p in prefixes:
+                if s.lower().startswith(p.lower()):
+                    s = s[len(p):].strip(" :-")
+                    break
+            return s or None
+
+        def get_first_value(df, columns):
+            """Return first non-empty value for given column names from df."""
+            if df.empty:
+                return None
+            for col in columns:
+                if col in df.columns:
+                    val = df.iloc[0].get(col)
+                    if pd.notna(val) and str(val).strip():
+                        return str(val).strip()
+            return None
+
         for _, row in tx_df.iterrows():
             ack_no = str(row.get('Acknowledgement No.', '')).strip()
             if not ack_no:
@@ -254,6 +291,15 @@ def upload_excel():
                 atm_id=str(atm_info.iloc[0]['ATM ID']) if not atm_info.empty else None,
                 atm_withdraw_amount=clean_amount(atm_info.iloc[0]['Withdrawal Amount']) if not atm_info.empty else None,
                 atm_withdraw_date=str(atm_info.iloc[0]['Withdrawal Date & Time']) if not atm_info.empty else None,
+                atm_location=clean_location(get_first_value(atm_info, [
+                    'ATM Location',
+                    'Location',
+                    'ATM Location / City',
+                    'ATM Address',
+                    'ATM Location/City',
+                    'Place/Location of ATM',
+                    'Place / Location of ATM'
+                ])),
                 cheque_no=str(chq_info.iloc[0]['Cheque No']) if not chq_info.empty else None,
                 cheque_withdraw_amount=clean_amount(chq_info.iloc[0]['Withdrawal Amount']) if not chq_info.empty else None,
                 cheque_withdraw_date=str(chq_info.iloc[0]['Withdrawal Date & Time']) if not chq_info.empty else None,
@@ -282,6 +328,7 @@ def view_graph():
 @app.route('/graph/<ack_no>')
 def graph_tree1(ack_no):
     return render_template('graph_tree1.html', ack_no=ack_no)
+    return render_template('graph_tree1.html', ack_no=ack_no, role=session.get('role'))
 
 @app.route('/complaints')
 def complaints():
@@ -380,6 +427,8 @@ def graph_data(ack_no):
                                 'atm_id': t.atm_id,
                                 'amount': t.atm_withdraw_amount,
                                 'date': t.atm_withdraw_date
+                                'date': t.atm_withdraw_date,
+                                'location': t.atm_location
                             } if t.atm_id else None,
                             'cheque_info': {
                                 'cheque_no': t.cheque_no,
@@ -618,6 +667,8 @@ def state_transactions(ack_no, state):
 
 @app.route('/save_kyc', methods=['POST'])
 def save_kyc():
+    if session.get('role') in VIEW_ONLY_ROLES:
+        return jsonify({"status": "error", "message": "View-only users cannot edit KYC"}), 403
     data = request.get_json()
     txn_id = data.get('txn_id')
 
@@ -745,6 +796,9 @@ def view_analytics():
 
 @app.route('/delete_complaint', methods=['POST'])
 def delete_complaint():
+    if session.get('role') in VIEW_ONLY_ROLES:
+        flash("View-only users cannot delete complaints.", "warning")
+        return redirect('/admin_dashboard')
     ack_no = request.form.get('ack_no', '').strip()
 
     if not ack_no:

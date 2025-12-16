@@ -501,6 +501,8 @@
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      max-height: 320px;
+      overflow: hidden;
       display: none;
       z-index: 12000;
       font-size: 13px;
@@ -525,6 +527,9 @@
       font-size: 16px;
       color: #111827;
       line-height: 1;
+    }
+      font-weight: 600;
+      color: #111827;
     }
     .hold-filter-menu .menu-actions,
     .hold-filter-menu .menu-sort {
@@ -563,6 +568,10 @@
       padding: 10px 12px;
       display: flex;
       gap: 8px;
+    }
+      max-height: 200px;
+      overflow: auto;
+      padding: 8px 12px;
     }
     .hold-filter-menu .menu-body label {
       display: flex;
@@ -695,6 +704,7 @@
             <table class="hold-table">
               <thead>
                 <tr>
+                  <th>Select</th>
                   <th>S. No</th>
                   <th>
                     P-O-H Account Number
@@ -746,6 +756,8 @@
   <!-- Scripts -->
   <script>
     const ackNo = "{{ ack_no }}";
+    // Expose viewer role to JS for read-only behavior
+    window.isViewerRole = {{ 'true' if role == 'Viewer' else 'false' }};
     let toastTimer = null;
 
     // Helper to show icon name briefly

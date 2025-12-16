@@ -132,6 +132,7 @@
         <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="Logo" class="logo">
         <h1>Tamil Nadu Cyber Crime Police</h1>
         <h2 style="font-weight: bold; margin-top: 20px;">Welcome, Investigative Officer</h2>
+        <h2 style="font-weight: bold; margin-top: 20px;">Welcome, {{ session.get('role', 'User') }}</h2>
     </div>
 
     <!-- Moved Hello username below blue section -->
@@ -142,6 +143,7 @@
 
 
     <div class="container">
+        {% if session.get('role') != 'Viewer' %}
         <div class="card">
             <h3>1. Register New Complaint</h3>
             <form action="{{ url_for('upload_excel') }}" method="POST" enctype="multipart/form-data">
@@ -149,6 +151,12 @@
                 <button type="submit">Upload</button>
             </form>
         </div>
+        {% else %}
+        <div class="card" style="opacity:0.8;">
+            <h3>1. Register New Complaint</h3>
+            <p style="color:#8b0000; font-weight:bold;">View-only users cannot upload.</p>
+        </div>
+        {% endif %}
 
         <div class="card">
             <h3>2. Verify Pre-Registered Complaint</h3>

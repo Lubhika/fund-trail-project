@@ -25,6 +25,7 @@ class Transaction(db.Model):
     atm_id = db.Column(db.String(100))
     atm_withdraw_amount = db.Column(db.Float)
     atm_withdraw_date = db.Column(db.String(100))
+    atm_location = db.Column(db.String(200))
 
     # New fields for Cheque withdrawal
     cheque_no = db.Column(db.String(100))

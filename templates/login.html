@@ -107,6 +107,18 @@
 
         <label for="password">Password:</label>
         <input type="password" name="password" placeholder="Enter Password" required>
+        <select name="role" id="roleSelect" required>
+          <option value="">-- Select Role --</option>
+          <option value="Admin">Admin</option>
+          <option value="Investigative Officer">Investigative Officer</option>
+          <option value="Viewer">Viewer (Read-only)</option>
+        </select>
+
+        <label for="username">Username:</label>
+        <input type="text" id="usernameInput" name="username" placeholder="Enter Username" required>
+
+        <label for="password">Password:</label>
+        <input type="password" id="passwordInput" name="password" placeholder="Enter Password" required>
 
         <button type="submit">Login</button>
       </form>
@@ -114,6 +126,27 @@
       {% if error %}
         <p class="error">{{ error }}</p>
       {% endif %}
+
+      <script>
+        // Toggle credential fields for Viewer (read-only)
+        const roleSelect = document.getElementById('roleSelect');
+        const userInput = document.getElementById('usernameInput');
+        const passInput = document.getElementById('passwordInput');
+
+        function toggleCreds() {
+          const isViewer = roleSelect.value === 'Viewer';
+          userInput.required = !isViewer;
+          passInput.required = !isViewer;
+          userInput.disabled = isViewer;
+          passInput.disabled = isViewer;
+          if (isViewer) {
+            userInput.value = '';
+            passInput.value = '';
+          }
+        }
+
+        roleSelect.addEventListener('change', toggleCreds);
+      </script>
     </div>
   </div>
 </body>

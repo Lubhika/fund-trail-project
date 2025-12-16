@@ -1,5 +1,6 @@
 // Fetching Branch data from IFSC Code. calling Razorpay IFSC API
 const branchCache = new Map();
+const isViewer = typeof window !== "undefined" ? Boolean(window.isViewerRole) : false;
 
 async function fetchBranchInfo(ifsc) {
   if (!ifsc) return { BRANCH: 'Unknown' };
@@ -60,6 +61,7 @@ const holdFilterMenu = document.getElementById('holdFilterMenu');
 // Hold table filter state
 let holdRowsData = [];       // currently displayed (filtered/sorted)
 let holdRowsAllData = [];    // full dataset for filters
+let holdRowsData = [];
 let holdFilters = {};
 let holdSort = { column: null, direction: null };
 let currentHoldFilterColumn = null;
@@ -110,6 +112,13 @@ async function openHoldPopup() {
     console.error('Error loading hold transactions', err);
     if (holdStatusText) holdStatusText.textContent = 'Failed to load put-on-hold transactions.';
   }
+
+  // Viewer: make hold modal read-only
+  if (isViewer && holdModalOverlay) {
+    holdModalOverlay.querySelectorAll('input, select, textarea').forEach(el => el.disabled = true);
+    const saveBtn = holdModalOverlay.querySelector('button[type="submit"], button#saveHoldExtraBtn');
+    if (saveBtn) saveBtn.style.display = 'none';
+  }
 }
 
 function closeHoldModal() {
@@ -120,6 +129,7 @@ function renderHoldTable(rows) {
   if (!holdTableBody) return;
   holdRowsAllData = rows || [];
   holdRowsData = holdRowsAllData;
+  holdRowsData = rows || [];
 
   if (!holdRowsData || holdRowsData.length === 0) {
     holdTableBody.innerHTML = '';
@@ -204,6 +214,7 @@ function applyHoldFilters() {
   if (!holdTableBody) return;
   const source = holdRowsAllData || [];
   const filtered = source.filter(row => {
+  const filtered = holdRowsData.filter(row => {
     return Object.entries(holdFilters).every(([col, selected]) => {
       if (!selected || selected.size === 0) return true;
       const value = formatHoldValue(row, col);
@@ -215,6 +226,7 @@ function applyHoldFilters() {
 
   holdTableBody.innerHTML = sortedRows.map((row, idx) => `
     <tr>
+      <td><input type="checkbox" class="hold-row-select" data-account-number="${row.account_number || ''}"></td>
       <td>${idx + 1}</td>
       <td>
         <a href="#" class="hold-account-link" data-account-number="${row.account_number || ''}">
@@ -290,6 +302,13 @@ function showHoldFilterMenu(button) {
     <label>
       <input type="checkbox" value="${String(val).replace(/"/g, '&quot;')}" ${selected.has(val) ? 'checked' : ''}>
       <span>${String(val)}</span>
+  const allValues = [...new Set(holdRowsData.map(row => formatHoldValue(row, column)))].sort();
+  const selected = holdFilters[column] ? new Set(holdFilters[column]) : new Set(allValues);
+
+  const bodyHtml = allValues.map(val => `
+    <label>
+      <input type="checkbox" value="${val.replace(/"/g, '&quot;')}" ${selected.has(val) ? 'checked' : ''}>
+      <span>${val}</span>
     </label>
   `).join('');
 
@@ -297,6 +316,7 @@ function showHoldFilterMenu(button) {
     <div class="menu-header">
       <span>Filter by ${button.parentElement?.textContent?.trim() || column}</span>
       <button aria-label="Close filter" class="hold-filter-close-btn">×</button>
+      <button aria-label="Close filter" style="border:none;background:none;cursor:pointer;font-size:16px;">×</button>
     </div>
     <div class="menu-sort">
       <button type="button" data-sort="asc">Ascending ↑</button>
@@ -804,6 +824,7 @@ function drawTree(root) {
             `<strong>ATM Withdrawal</strong><br>` +
             `Account: ${d.data.name}<br>` +
             `ATM ID: ${d.data.atm_info.atm_id}<br>` +
+            (d.data.atm_info.location ? `ATM Location: ${d.data.atm_info.location}<br>` : '') +
             `Amount: ₹${d.data.atm_info.amount}<br>` +
             `Date: ${d.data.atm_info.date}`;
           leftPanel.style.display = 'block';
@@ -876,6 +897,9 @@ function drawTree(root) {
           html += `<div style="margin-bottom:8px;"><label style="font-weight:600; display:block; margin-bottom:4px;">Court Order Date:</label><input type="date" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px;"></div>`;
           html += `<div style="margin-bottom:8px;"><label style="font-weight:600; display:block; margin-bottom:4px;">Status of Refund:</label><select style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px;"><option value="refunded">Refunded</option><option value="partially_refunded">Partially Refunded</option><option value="not_refunded">Not Refunded</option></select></div>`;
           html += `<div style="margin-bottom:8px;"><label style="font-weight:600; display:block; margin-bottom:4px;">Amount Refund:</label><input type="number" step="0.01" placeholder="₹" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px;"></div>`;
+          html += `<div style="margin-bottom:8px;"><label style="font-weight:600; display:block; margin-bottom:4px;">Court Order Date:</label><input id="holdCourtDate" type="date" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px;"></div>`;
+          html += `<div style="margin-bottom:8px;"><label style="font-weight:600; display:block; margin-bottom:4px;">Status of Refund:</label><select id="holdRefundStatus" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px;"><option value="refunded">Refunded</option><option value="partially_refunded">Partially Refunded</option><option value="not_refunded">Not Refunded</option></select></div>`;
+          html += `<div style="margin-bottom:8px;"><label style="font-weight:600; display:block; margin-bottom:4px;">Amount Refund:</label><input id="holdRefundAmount" type="number" step="0.01" placeholder="₹" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px;"></div>`;
           html += `<button id="saveHoldExtraBtn" style="background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-weight:600; width:100%;">Save</button>`;
           html += `</div>`;
           // Add PDF button
@@ -885,6 +909,17 @@ function drawTree(root) {
 
           const formSection = document.getElementById(formSectionId);
           const toggleBtn = document.getElementById(toggleBtnId);
+          const courtInput = document.getElementById('holdCourtDate');
+          const statusSelect = document.getElementById('holdRefundStatus');
+          const amountInput = document.getElementById('holdRefundAmount');
+          const saveHoldBtn = document.getElementById('saveHoldExtraBtn');
+
+          // Viewer: disable hold form inputs and hide save button
+          if (isViewer) {
+            [courtInput, statusSelect, amountInput].forEach(el => { if (el) el.disabled = true; });
+            if (saveHoldBtn) saveHoldBtn.style.display = 'none';
+          }
+
           if (toggleBtn && formSection) {
             toggleBtn.onclick = () => {
               const isHidden = formSection.style.display === 'none' || formSection.style.display === '';
@@ -1027,6 +1062,15 @@ function drawTree(root) {
           kycSection.style.display = "none";
         }
         
+        // If viewer, disable KYC editing entirely
+        if (isViewer) {
+          ['kycName', 'kycAadhar', 'kycMobile', 'kycAddress'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.disabled = true;
+          });
+          if (saveKycBtn) saveKycBtn.style.display = "none";
+        }
+
         // Update form values with current transaction data
         if (kycTxnId) kycTxnId.value = d.data.txid || '';
         if (kycName) kycName.value = d.data.kyc_name || '';
@@ -1037,6 +1081,7 @@ function drawTree(root) {
         // Check if KYC is already saved
         let isKycSaved = d.data.kyc_name !== null && d.data.kyc_name !== "";
         if (isKycSaved) {
+        if (isKycSaved || isViewer) {
           ['kycName', 'kycAadhar', 'kycMobile', 'kycAddress'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.disabled = true;
@@ -1054,6 +1099,10 @@ function drawTree(root) {
         if (kycForm) {
           // Create a new form handler function for this transaction
           const formHandler = (e) => {
+            if (isViewer) {
+              e.preventDefault();
+              return;
+            }
             e.preventDefault();
             const txnId = document.getElementById('kycTxnId')?.value || '';
             const name = document.getElementById('kycName')?.value || '';
