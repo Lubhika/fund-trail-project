@@ -174,6 +174,23 @@ function formatHoldValue(row, column) {
   }
 }
 
+function normalizeFilterValue(column, rawValue) {
+  if (rawValue === undefined || rawValue === null) return 'N/A';
+  const value = String(rawValue).trim();
+
+  if (column === 'amount') {
+    const numeric = Number(value.replace(/[₹,\s]/g, ''));
+    return Number.isFinite(numeric) ? numeric : 'N/A';
+  }
+
+  if (column === 'layer') {
+    const numeric = Number(value.replace(/[^\d.-]/g, ''));
+    return Number.isFinite(numeric) ? numeric : 'N/A';
+  }
+
+  return value;
+}
+
 function getHoldSortValue(row, column) {
   switch (column) {
     case 'amount':
@@ -211,7 +228,7 @@ function applyHoldFilters() {
   const filtered = holdRowsData.filter(row => {
     return Object.entries(holdFilters).every(([col, selected]) => {
       if (!selected || selected.size === 0) return true;
-      const value = formatHoldValue(row, col);
+      const value = normalizeFilterValue(col, formatHoldValue(row, col));
       return selected.has(value);
     });
   });
@@ -249,12 +266,24 @@ function showHoldFilterMenu(button) {
   const column = button.dataset.column;
   currentHoldFilterColumn = column;
 
-  const allValues = [...new Set(holdRowsData.map(row => formatHoldValue(row, column)))].sort();
-  const selected = holdFilters[column] ? new Set(holdFilters[column]) : new Set(allValues);
+  const allValues = [...new Set(
+    holdRowsData.map(row => normalizeFilterValue(column, formatHoldValue(row, column)))
+  )].sort((a, b) => {
+    const aNum = typeof a === 'number';
+    const bNum = typeof b === 'number';
+    if (aNum && bNum) return a - b;
+    if (aNum) return -1;
+    if (bNum) return 1;
+    return String(a).localeCompare(String(b), undefined, { numeric: true });
+  });
+
+  const selected = holdFilters[column]
+    ? new Set([...holdFilters[column]].map(v => normalizeFilterValue(column, v)))
+    : new Set(allValues);
 
   const bodyHtml = allValues.map(val => `
     <label>
-      <input type="checkbox" value="${val.replace(/"/g, '&quot;')}" ${selected.has(val) ? 'checked' : ''}>
+      <input type="checkbox" value="${String(val).replace(/"/g, '&quot;')}" ${selected.has(val) ? 'checked' : ''}>
       <span>${val}</span>
     </label>
   `).join('');
@@ -329,7 +358,7 @@ function showHoldFilterMenu(button) {
     e.stopPropagation();
     const selectedValues = new Set();
     holdFilterMenu.querySelectorAll('.menu-body input[type="checkbox"]').forEach(cb => {
-      if (cb.checked) selectedValues.add(cb.value);
+      if (cb.checked) selectedValues.add(normalizeFilterValue(column, cb.value));
     });
     holdFilters[column] = selectedValues;
     applyHoldFilters();

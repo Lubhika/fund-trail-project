@@ -497,11 +497,27 @@
       border-radius: 8px;
       box-shadow: 0 8px 24px rgba(0,0,0,0.18);
       width: 260px;
-      max-height: 320px;
-      overflow: hidden;
+      max-height: 420px;
+      /* Allow the entire filter popup to scroll if needed
+         so that options like 9 and 10 are always reachable */
+      overflow-y: auto;
+      overflow-x: hidden;
       display: none;
       z-index: 12000;
       font-size: 13px;
+    }
+    /* Make sure the close (×) button in the filter header is clearly visible and clickable */
+    .hold-filter-menu .menu-header button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 18px;
+      color: #6b7280;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .hold-filter-menu .menu-header button:hover {
+      color: #111827;
     }
     .hold-filter-menu .menu-header {
       padding: 10px 12px;

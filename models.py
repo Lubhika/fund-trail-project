@@ -51,6 +51,12 @@ class User(db.Model, UserMixin):
     username = db.Column(db.String(100), unique=True)
     password_hash = db.Column(db.Text)
     role = db.Column(db.String(50))
+    name = db.Column(db.String(100))
+    rank = db.Column(db.String(100))
+    email = db.Column(db.String(120))
+    # Optional override for displaying "No. of Files Uploaded" in admin view.
+    # If NULL, the UI will show the computed count from UploadedFile.
+    manual_upload_count = db.Column(db.Integer, nullable=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)

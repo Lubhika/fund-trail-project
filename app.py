@@ -8,12 +8,13 @@ import pandas as pd  # pyright: ignore[reportMissingImports]
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask_login import login_required, LoginManager, login_user  # pyright: ignore[reportMissingImports]
 from datetime import timezone, timedelta, datetime
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, inspect, text
 from flask_migrate import Migrate  # pyright: ignore[reportMissingModuleSource]
 import pymysql  # pyright: ignore[reportMissingModuleSource]
 pymysql.install_as_MySQLdb()
 import requests
 import concurrent.futures
+import re
 
 app = Flask(__name__)
 
@@ -103,6 +104,83 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 db.init_app(app)
+
+def ensure_transaction_columns():
+    """Add any newly introduced columns to the transaction table if missing."""
+    required_columns = {
+        'layer': 'INT',
+        'from_account': 'VARCHAR(100)',
+        'to_account': 'VARCHAR(100)',
+        'ack_no': 'VARCHAR(100)',
+        'bank_name': 'VARCHAR(100)',
+        'ifsc_code': 'VARCHAR(50)',
+        'txn_date': 'VARCHAR(100)',
+        'txn_id': 'VARCHAR(100)',
+        'amount': 'FLOAT',
+        'disputed_amount': 'FLOAT',
+        'action_taken': 'VARCHAR(255)',
+        'account_number': 'VARCHAR(50)',
+        'state': 'VARCHAR(50)',
+        'atm_id': 'VARCHAR(100)',
+        'atm_withdraw_amount': 'FLOAT',
+        'atm_withdraw_date': 'VARCHAR(100)',
+        'atm_location': 'VARCHAR(200)',
+        'cheque_no': 'VARCHAR(100)',
+        'cheque_withdraw_amount': 'FLOAT',
+        'cheque_withdraw_date': 'VARCHAR(100)',
+        'cheque_ifsc': 'VARCHAR(50)',
+        'put_on_hold_txn_id': 'VARCHAR(100)',
+        'put_on_hold_date': 'VARCHAR(100)',
+        'put_on_hold_amount': 'FLOAT',
+        'kyc_name': 'VARCHAR(120)',
+        'kyc_aadhar': 'VARCHAR(20)',
+        'kyc_mobile': 'VARCHAR(20)',
+        'kyc_address': 'VARCHAR(200)',
+        'upload_id': 'INT'
+    }
+
+    inspector = inspect(db.engine)
+    existing_columns = {col['name'] for col in inspector.get_columns('transaction')}
+    missing = {col: ddl for col, ddl in required_columns.items() if col not in existing_columns}
+
+    if not missing:
+        return
+
+    with db.engine.connect() as conn:
+        for col, ddl in missing.items():
+            try:
+                conn.execute(text(f'ALTER TABLE `transaction` ADD COLUMN `{col}` {ddl}'))
+                print(f"Added missing column: {col}")
+            except Exception as exc:
+                print(f"Skipping column {col}; encountered error: {exc}")
+
+def ensure_user_columns():
+    """Add newly introduced columns to the user table if they are missing."""
+    required_columns = {
+        'name': 'VARCHAR(100)',
+        'rank': 'VARCHAR(100)',
+        'email': 'VARCHAR(120)',
+        'manual_upload_count': 'INT NULL'
+    }
+
+    inspector = inspect(db.engine)
+    existing_columns = {col['name'] for col in inspector.get_columns('user')}
+    missing = {col: ddl for col, ddl in required_columns.items() if col not in existing_columns}
+
+    if not missing:
+        return
+
+    with db.engine.connect() as conn:
+        for col, ddl in missing.items():
+            try:
+                conn.execute(text(f'ALTER TABLE `user` ADD COLUMN `{col}` {ddl}'))
+                print(f"Added missing user column: {col}")
+            except Exception as exc:
+                print(f"Skipping user column {col}; encountered error: {exc}")
+
+with app.app_context():
+    ensure_transaction_columns()
+    ensure_user_columns()
 
 
 USERS = {
@@ -262,6 +340,23 @@ def upload_excel():
                     break
             return s or None
 
+        def clean_bank_name(value):
+            """Clean bank name by removing HTML tags and truncating to 100 characters."""
+            if pd.isna(value) or value is None:
+                return ''
+            # Convert to string and strip whitespace
+            s = str(value).strip()
+            # Remove HTML tags (e.g., <hr/>, <br/>, etc.)
+            s = re.sub(r'<[^>]+>', '', s)
+            # Replace multiple spaces with single space
+            s = re.sub(r'\s+', ' ', s)
+            # Strip again after HTML removal
+            s = s.strip()
+            # Truncate to 100 characters (column size limit)
+            if len(s) > 100:
+                s = s[:100]
+            return s
+
         def get_first_value(df, columns):
             """Return first non-empty value for given column names from df."""
             if df.empty:
@@ -290,7 +385,7 @@ def upload_excel():
                 to_account=acc_to,
                 account_number=acc_to,
                 ack_no=ack_no,
-                bank_name=str(row.get('Bank/FIs', '')).strip(),
+                bank_name=clean_bank_name(row.get('Bank/FIs')),
                 ifsc_code=str(row.get('Ifsc Code', '')).strip(),
                 txn_date=str(row.get('Transaction Date', '')).strip(),
                 txn_id=str(row.get('Transaction Id / UTR Number', '')).strip(),
@@ -695,13 +790,30 @@ def save_kyc():
 def view_all_complaints():
     complaints = UploadedFile.query.order_by(UploadedFile.upload_time.desc()).all()
 
-    # Convert upload_time to IST (UTC+5:30) and get ACK numbers
+    # Build a mapping of filename → list of distinct ACK numbers across all uploads
+    filename_ack_rows = (
+        db.session.query(UploadedFile.filename, Transaction.ack_no)
+        .join(Transaction, Transaction.upload_id == UploadedFile.id)
+        .filter(Transaction.ack_no.isnot(None))
+        .distinct()
+        .all()
+    )
+
+    filename_to_acks = {}
+    for fname, ack in filename_ack_rows:
+        if not ack:
+            continue
+        filename_to_acks.setdefault(fname, set()).add(ack)
+
+    # Convert upload_time to IST (UTC+5:30) and attach ACK numbers by filename
     for c in complaints:
         if c.upload_time:
-            c.upload_time = c.upload_time.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30)))
-        # Get distinct ACK numbers for this upload
-        ack_nos = db.session.query(Transaction.ack_no).filter_by(upload_id=c.id).distinct().all()
-        c.ack_nos = [ack[0] for ack in ack_nos if ack[0]]
+            c.upload_time = c.upload_time.replace(tzinfo=timezone.utc).astimezone(
+                timezone(timedelta(hours=5, minutes=30))
+            )
+
+        ack_set = filename_to_acks.get(c.filename, set())
+        c.ack_nos = sorted(list(ack_set)) if ack_set else []
         print(f"File: {c.filename}, ID: {c.id}, ACK numbers: {c.ack_nos}")
 
     return render_template("view_all_complaints.html", complaint_data=complaints)
@@ -718,14 +830,60 @@ def view_officers():
     # For each officer, count uploaded files
     officer_data = []
     for officer in officers:
-        upload_count = UploadedFile.query.filter_by(uploader=officer.username).count()
+        computed_upload_count = UploadedFile.query.filter_by(uploader=officer.username).count()
+        upload_count = officer.manual_upload_count if officer.manual_upload_count is not None else computed_upload_count
         officer_data.append({
             'username': officer.username,
             'role': officer.role,
-            'upload_count': upload_count
+            'upload_count': upload_count,
+            'computed_upload_count': computed_upload_count,
+            'manual_upload_count': officer.manual_upload_count,
+            'name': officer.name,
+            'rank': officer.rank,
+            'email': officer.email
         })
 
     return render_template('view_officers.html', officers=officer_data)
+
+@app.route('/update_officer', methods=['POST'])
+def update_officer():
+    if 'username' not in session or session.get('role') != 'Admin':
+        flash('Access Denied!')
+        return redirect(url_for('login'))
+
+    username = (request.form.get('username') or '').strip()
+    if not username:
+        flash('Invalid request.')
+        return redirect(url_for('view_officers'))
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        flash('Officer not found.')
+        return redirect(url_for('view_officers'))
+
+    # Only allow editing investigative officers via this view
+    if user.role != 'Investigative Officer':
+        flash('Only Investigative Officers can be edited here.')
+        return redirect(url_for('view_officers'))
+
+    # Update editable fields (keep it minimal)
+    user.name = (request.form.get('name') or '').strip() or None
+    user.rank = (request.form.get('rank') or '').strip() or None
+    user.email = (request.form.get('email') or '').strip() or None
+
+    manual_upload_count_raw = (request.form.get('manual_upload_count') or '').strip()
+    if manual_upload_count_raw == '':
+        user.manual_upload_count = None
+    else:
+        try:
+            user.manual_upload_count = int(manual_upload_count_raw)
+        except ValueError:
+            flash('No. of Files Uploaded must be a number (or leave blank).')
+            return redirect(url_for('view_officers'))
+
+    db.session.commit()
+    flash(f'Officer {username} updated successfully.')
+    return redirect(url_for('view_officers'))
 
 
 @app.route('/delete_officer', methods=['POST'])
@@ -871,11 +1029,14 @@ def add_officer():
 
 @app.route('/submit_officer', methods=['POST'])
 def submit_officer():
+    name = request.form.get('name', '').strip()
+    rank = request.form.get('rank', '').strip()
+    email = request.form.get('email', '').strip()
     username = request.form['username'].strip()
     password = request.form['password'].strip()
 
-    if not username or not password:
-        flash("Username and password are required.", "warning")
+    if not (name and rank and email and username and password):
+        flash("All fields are required.", "warning")
         return redirect('/add_officer')
 
     existing = User.query.filter_by(username=username).first()
@@ -883,7 +1044,13 @@ def submit_officer():
         flash("Username already exists.", "danger")
         return redirect('/add_officer')
 
-    new_officer = User(username=username, role='Investigative Officer')
+    new_officer = User(
+        username=username,
+        role='Investigative Officer',
+        name=name,
+        rank=rank,
+        email=email
+    )
     new_officer.set_password(password)  # ✅ Use method, not direct assignment
     db.session.add(new_officer)
     db.session.commit()

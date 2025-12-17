@@ -68,7 +68,13 @@
             <tbody>
                 {% for complaint in complaint_data %}
                 <tr>
-                    <td>{{ complaint.transaction.ack_no if complaint.transaction else '—' }}</td>
+                    <td>
+                        {% if complaint.ack_nos %}
+                            {{ complaint.ack_nos[0] }}
+                        {% else %}
+                            
+                        {% endif %}
+                    </td>
                     <td>{{ complaint.filename }}</td>
                     <td>{{ complaint.uploader }}</td>
                     <td>
