@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard - Fund Trail Analysis</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Roboto', sans-serif;
+            background-color: #eaf3fc;
+            text-align: center;
+        }
+
+        .header {
+            background-color: #003366;
+            padding: 20px 0;
+            color: white;
+        }
+
+        .logo {
+            width: 90px;
+            display: block;
+            margin: 0 auto 10px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .welcome {
+            font-size: 18px;
+            margin-top: 15px;
+            color: #003366;
+            font-weight: 500;
+        }
+
+        .container {
+            margin-top: 50px;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 40px;
+        }
+
+        .card {
+            background-color: white;
+            padding: 30px;
+            border-radius: 12px;
+            width: 320px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .card h3 {
+            margin-bottom: 20px;
+            color: #002b5c;
+        }
+
+        input[type="file"],
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 2px solid #ccc;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        button {
+            width: 100%;
+            background-color: #004aad;
+            color: white;
+            padding: 10px;
+            font-size: 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #003b8d;
+        }
+
+        .logout {
+            margin: 40px 0;
+        }
+
+        .logout a {
+            background-color: #b30000;
+            color: white;
+            padding: 10px 25px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .logout a:hover {
+            background-color: #8c0000;
+        }
+
+        .flashes {
+            list-style: none;
+            padding: 0;
+            margin-top: 20px;
+        }
+
+        .flash {
+            padding: 10px;
+            margin: 0 auto;
+            width: 300px;
+            border-radius: 5px;
+            color: rgb(250, 10, 10);
+            font-weight: bold;
+        }
+
+        .flash.success {
+            background-color: #4caf50;
+        }
+
+        .flash.error {
+            background-color: #f44336;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="Logo" class="logo">
+        <h1>Tamil Nadu Cyber Crime Police</h1>
+        <h2 style="font-weight: bold; margin-top: 20px;">Welcome, {{ session.get('role', 'User') }}</h2>
+    </div>
+
+    <!-- Moved Hello username below blue section -->
+    <div style="text-align: center; margin-top: 10px; font-size: 18px;font-weight: bold;">
+        <p>Hello, {{ session['username'] }}</p>
+    </div>
+
+
+
+    <div class="container">
+        {% if session.get('role') != 'Viewer' %}
+        <div class="card">
+            <h3>1. Register New Complaint</h3>
+            <form action="{{ url_for('upload_excel') }}" method="POST" enctype="multipart/form-data">
+                <input type="file" name="excel_file" accept=".xlsx" required>
+                <button type="submit">Upload</button>
+            </form>
+        </div>
+        {% else %}
+        <div class="card" style="opacity:0.8;">
+            <h3>1. Register New Complaint</h3>
+            <p style="color:#8b0000; font-weight:bold;">View-only users cannot upload.</p>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <h3>2. Verify Pre-Registered Complaint</h3>
+            <form action="{{ url_for('view_graph') }}" method="GET">
+                <input type="text" name="ack_no" placeholder="Enter Ack No" required>
+                <button type="submit">View Graph</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="logout">
+        <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <ul class="flashes">
+        {% for category, message in messages %}
+        <li class="flash {{ category }}">{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% endwith %}
+
+</body>
+
+</html>
+<!-- =============================================================================================== -->

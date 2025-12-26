@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>All Investigative Officers</title> 
+  <style>
+    table {
+      width: 80%;
+      margin: auto;
+      border-collapse: collapse;
+      font-size: 18px;
+    }
+    th, td {
+      padding: 12px;
+      border: 1px solid #999;
+      text-align: center;
+    }
+    th {
+      background-color: #ddd;
+    }
+    h2, h4 {
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .back-button {
+      text-align: center;
+      margin-top: 40px;
+    }
+
+    .back-button a {
+      background-color: #d9534f;
+      color: white;
+      padding: 10px 25px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .back-button a:hover {
+      background-color: #c9302c;
+    }
+
+    .btn {
+      display: inline-block;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      text-decoration: none;
+      margin-right: 6px;
+      font-size: 14px;
+    }
+    .btn-primary { background-color: #0275d8; }
+    .btn-success { background-color: #5cb85c; }
+    .btn-secondary { background-color: #6c757d; }
+    .btn-danger { background-color: #d9534f; }
+    .cell-input {
+      width: 95%;
+      box-sizing: border-box;
+      padding: 6px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div>
+    <img src="{{ url_for('static', filename='logo.png') }}" style="display:block;margin:auto;" width="100">
+    <h2>Tamil Nadu Cyber Crime Police</h2>
+    <h4>All Investigative Officers</h4> 
+
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Rank</th>
+          <th>Email</th>
+          <th>Username</th>
+          <th>Role</th>
+          <th>No. of Files Uploaded</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for officer in officers %}
+        <tr data-username="{{ officer.username }}">
+          <td>
+            <span class="cell-text" data-field="name">{{ officer.name or '—' }}</span>
+            <input class="cell-input cell-edit" type="text" name="name" value="{{ officer.name or '' }}"
+                   form="form-{{ officer.username }}" disabled style="display:none;">
+          </td>
+          <td>
+            <span class="cell-text" data-field="rank">{{ officer.rank or '—' }}</span>
+            <input class="cell-input cell-edit" type="text" name="rank" value="{{ officer.rank or '' }}"
+                   form="form-{{ officer.username }}" disabled style="display:none;">
+          </td>
+          <td>
+            <span class="cell-text" data-field="email">{{ officer.email or '—' }}</span>
+            <input class="cell-input cell-edit" type="email" name="email" value="{{ officer.email or '' }}"
+                   form="form-{{ officer.username }}" disabled style="display:none;">
+          </td>
+          <td>{{ officer.username }}</td>
+          <td>{{ officer.role }}</td>
+          <td>
+            <span class="cell-text" data-field="manual_upload_count">{{ officer.upload_count }}</span>
+            <input class="cell-input cell-edit" type="number" min="0" step="1" name="manual_upload_count"
+                   value="{{ officer.manual_upload_count if officer.manual_upload_count is not none else '' }}"
+                   placeholder="{{ officer.computed_upload_count }}"
+                   form="form-{{ officer.username }}"
+                   disabled style="display:none;">
+          </td>
+          <td>
+            <form id="form-{{ officer.username }}" method="POST" action="{{ url_for('update_officer') }}" style="display:inline;">
+              <input type="hidden" name="username" value="{{ officer.username }}">
+            </form>
+            <button type="button" class="btn btn-primary btn-edit">Edit</button>
+            <button type="submit" class="btn btn-success btn-save" form="form-{{ officer.username }}" style="display:none;">Save</button>
+            <button type="button" class="btn btn-secondary btn-cancel" style="display:none;">Cancel</button>
+            <button type="submit" class="btn btn-danger"
+                    form="form-{{ officer.username }}"
+                    formaction="{{ url_for('delete_officer') }}"
+                    formmethod="POST"
+                    onclick="return confirm('Are you sure you want to delete this officer?')">Delete</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="back-button">
+      <a href="{{ url_for('admin_dashboard') }}">⬅️ Back to Dashboard</a>
+    </div>
+  </div>
+
+  <script>
+    function setRowEditing(tr, isEditing) {
+      const edits = tr.querySelectorAll('.cell-edit');
+      const texts = tr.querySelectorAll('.cell-text');
+      const editBtn = tr.querySelector('.btn-edit');
+      const saveBtn = tr.querySelector('.btn-save');
+      const cancelBtn = tr.querySelector('.btn-cancel');
+
+      edits.forEach((el) => {
+        if (isEditing) {
+          el.disabled = false;
+          el.style.display = '';
+        } else {
+          el.disabled = true;
+          el.style.display = 'none';
+        }
+      });
+      texts.forEach((el) => el.style.display = isEditing ? 'none' : '');
+      if (editBtn) editBtn.style.display = isEditing ? 'none' : '';
+      if (saveBtn) saveBtn.style.display = isEditing ? '' : 'none';
+      if (cancelBtn) cancelBtn.style.display = isEditing ? '' : 'none';
+    }
+
+    function resetRowValues(tr) {
+      tr.querySelectorAll('.cell-edit').forEach((inp) => {
+        if (inp.dataset.original !== undefined) {
+          inp.value = inp.dataset.original;
+        }
+      });
+    }
+
+    document.querySelectorAll('tr[data-username]').forEach((tr) => {
+      // stash original values for cancel
+      tr.querySelectorAll('.cell-edit').forEach((inp) => {
+        inp.dataset.original = inp.value;
+      });
+
+      const editBtn = tr.querySelector('.btn-edit');
+      const cancelBtn = tr.querySelector('.btn-cancel');
+
+      if (editBtn) {
+        editBtn.addEventListener('click', () => setRowEditing(tr, true));
+      }
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+          resetRowValues(tr);
+          setRowEditing(tr, false);
+        });
+      }
+    });
+  </script>
+</body>
+</html>

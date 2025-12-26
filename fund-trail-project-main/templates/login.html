@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cyber Crime Portal Login</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+  <style>
+    body {
+      background-color: #eaf1ff;
+      font-family: 'Roboto', sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+
+    .login-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    .login-box {
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+      width: 360px;
+      text-align: center;
+    }
+
+    .login-box img {
+      width: 90px;
+      margin-bottom: 20px;
+    }
+
+    h2 {
+      margin-bottom: 5px;
+      color: #0a2e63;
+    }
+
+    p {
+      margin-bottom: 20px;
+      font-weight: bold;
+      color: #444;
+    }
+
+    label {
+      display: block;
+      margin: 15px 0 5px;
+      text-align: left;
+      font-weight: bold;
+    }
+
+    select,
+    input {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 15px;
+    }
+
+    button {
+      margin-top: 20px;
+      width: 100%;
+      padding: 12px;
+      background-color: #1a3cd4;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    button:hover {
+      background-color: #0d2fa0;
+    }
+
+    .error {
+      color: red;
+      margin-top: 15px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-box">
+      <!-- Use the police logo from your static folder -->
+      <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="TN Police Logo">
+
+      <h2>Tamil Nadu Cyber Crime Police</h2>
+      <p>Login Portal</p>
+
+      <form method="POST" action="{{ url_for('login') }}">
+        <label for="role">Login As:</label>
+        <select name="role" id="roleSelect" required>
+          <option value="">-- Select Role --</option>
+          <option value="Admin">Admin</option>
+          <option value="Investigative Officer">Investigative Officer</option>
+          <option value="Viewer">Viewer (Read-only)</option>
+        </select>
+
+        <label for="username">Username:</label>
+        <input type="text" id="usernameInput" name="username" placeholder="Enter Username" required>
+
+        <label for="password">Password:</label>
+        <input type="password" id="passwordInput" name="password" placeholder="Enter Password" required>
+
+        <button type="submit">Login</button>
+      </form>
+
+      {% if error %}
+        <p class="error">{{ error }}</p>
+      {% endif %}
+
+      <script>
+        // Toggle credential fields for Viewer (read-only)
+        const roleSelect = document.getElementById('roleSelect');
+        const userInput = document.getElementById('usernameInput');
+        const passInput = document.getElementById('passwordInput');
+
+        function toggleCreds() {
+          const isViewer = roleSelect.value === 'Viewer';
+          userInput.required = !isViewer;
+          passInput.required = !isViewer;
+          userInput.disabled = isViewer;
+          passInput.disabled = isViewer;
+          if (isViewer) {
+            userInput.value = '';
+            passInput.value = '';
+          }
+        }
+
+        roleSelect.addEventListener('change', toggleCreds);
+      </script>
+    </div>
+  </div>
+</body>
+</html>

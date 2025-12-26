@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Add Verification Officer - FundTrail</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: #f9f9f9;
+            margin: 0;
+            padding: 0;
+            text-align: center;
+        }
+
+        .header {
+            margin-top: 30px;
+        }
+
+        .header img {
+            width: 100px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin: 10px 0 0;
+            color: #222;
+        }
+
+        .header h2 {
+            font-size: 20px;
+            font-weight: bold;
+            color: #383737;
+            margin: 5px 0 30px;
+        }
+
+        .form-container {
+            max-width: 400px;
+            margin: auto;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-top: 30px;
+        }
+
+        .form-container h3 {
+            margin-bottom: 20px;
+            color: #004aad;
+        }
+
+        .form-container input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+        }
+
+        .form-container button {
+            background-color: #004aad;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .form-container button:hover {
+            background-color: #002e6b;
+        }
+
+        .back-btn {
+            margin-top: 20px;
+        }
+
+        .back-btn a {
+            text-decoration: none;
+            color: #004aad;
+            font-weight: bold;
+        }
+
+        .alert {
+            margin: 20px auto;
+            width: 400px;
+            padding: 10px;
+            border-radius: 6px;
+        }
+
+        .alert-success { background-color: #d4edda; color: #155724; }
+        .alert-danger { background-color: #f8d7da; color: #721c24; }
+        .alert-warning { background-color: #fff3cd; color: #856404; }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="TN Police Logo">
+        <h1>Tamil Nadu Cyber Crime Police</h1>
+        <h2><strong>Add Investigative Officer</strong></h2>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="form-container">
+        <h3>Enter Officer Details</h3>
+        <form action="{{ url_for('submit_officer') }}" method="POST">
+            <input type="text" name="name" placeholder="Name" required>
+            <input type="text" name="rank" placeholder="Rank" required>
+            <input type="email" name="email" placeholder="Email" required>
+            <input type="text" name="username" placeholder="Username" required>
+            <input type="password" name="password" placeholder="Password" required>
+            <button type="submit">Add Officer</button>
+        </form>
+        <div class="back-btn">
+            <a href="{{ url_for('admin_dashboard') }}" class="back-btn">⬅️ Back to Dashboard</a>
+        </div>
+    </div>
+
+</body>
+</html>

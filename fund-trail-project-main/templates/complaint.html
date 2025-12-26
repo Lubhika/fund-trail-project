@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Complaint Viewer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="dashboard-page">
+  <header class="dashboard-header">
+    <div class="logo-area">
+      <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="TN Logo" class="logo-small">
+      <h2>Complaint Viewer</h2>
+    </div>
+    <div class="user-info">
+      <a href="{{ url_for('index') }}">Dashboard</a> |
+      <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+  </header>
+
+  <main class="dashboard-main">
+    <h3>List of Complaints</h3>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Ack No</th>
+          <th>Victim</th>
+          <th>Complaint Date</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in complaints %}
+        <tr>
+          <td>{{ c.ack_no }}</td>
+          <td>{{ c.victim_name }}</td>
+          <td>{{ c.date }}</td>
+          <td>{{ c.status }}</td>
+          <td><a href="{{ url_for('graph_tree', ack_no=c.ack_no) }}">View Graph</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
