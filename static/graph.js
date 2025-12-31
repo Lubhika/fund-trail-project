@@ -556,9 +556,7 @@ function bfsAssignLayers(root) {
     if (node.children) {
       node.children.forEach(child => {
         if (!child || !child.data) return;
-        if (!child.data.layer || child.data.layer < currentLayer + 1) {
-          child.data.layer = currentLayer + 1;
-        }
+        child.data.layer = currentLayer + 1;
         queue.push(child);
       });
     }
@@ -670,6 +668,27 @@ function drawTree(root) {
     .attr('transform', d => `translate(${d.x},${d.y})`);
 
   let victimCounter = 1;
+
+  // Helper to append centered, evenly-spaced lines of text inside the node
+  function appendCenteredLines(container, lines, options = {}) {
+    const lineHeight = options.lineHeight || 16;
+    const startY = options.startY !== undefined
+      ? options.startY
+      : -((lines.length - 1) / 2) * lineHeight;
+
+    lines.forEach((ln, idx) => {
+      const t = container.append('text')
+        .attr('x', 0)
+        .attr('y', startY + idx * lineHeight)
+        .attr('text-anchor', 'middle')
+        .text(ln.text || '');
+
+      if (ln.class) t.attr('class', ln.class);
+      if (ln.size) t.style('font-size', ln.size + 'px');
+      if (ln.weight) t.style('font-weight', ln.weight);
+      if (ln.fill) t.style('fill', ln.fill);
+    });
+  }
   nodes.each(function (d) {
     const n = d3.select(this);
     if (!d || !d.data || !d.data.layer) return;
@@ -695,75 +714,47 @@ function drawTree(root) {
     n.selectAll('text').remove();
 
     if (d.depth === 0) {
-      n.append('text').attr('x', 0).attr('y', -10).attr('text-anchor', 'middle')
-        .style('font-size', '13px').style('font-weight', 'bold').style('fill', '#000')
-        .text('Acknowledgement No');
-      n.append('text').attr('x', 0).attr('y', 10).attr('text-anchor', 'middle')
-        .style('font-size', '13px').style('fill', '#000').text(ackNo);
+      appendCenteredLines(n, [
+        { text: 'Acknowledgement No', size: 13, weight: 'bold', fill: '#000' },
+        { text: ackNo, size: 13, fill: '#000' }
+      ], { lineHeight: 22 });
     }
 
     if (d.depth === 1) {
       const victimNo = victimCounter++;
-      n.append('text').attr('x', 0).attr('y', -14).attr('text-anchor', 'middle')
-        .style('font-size', '13px').style('font-weight', 'bold').style('fill', '#000')
-        .text(`Victim Account No: ${victimNo}`);
-      n.append('text').attr('x', 0).attr('y', 6).attr('text-anchor', 'middle')
-        .style('font-size', '12px').style('fill', '#000')
-        .text(`Acc No: ${d.data.name || 'N/A'}`);
-      let bankName = d.data.action || d.data.bank || 'Unknown Bank';
+      appendCenteredLines(n, [
+        { text: `Victim Account No: ${victimNo}`, size: 13, weight: 'bold', fill: '#000' },
+        { text: `Acc No: ${d.data.name || 'N/A'}`, size: 12, fill: '#000' },
+        { text: `Bank: ${d.data.action || d.data.bank || 'Unknown Bank'}`, size: 12, fill: '#1f2937' }
+      ], { lineHeight: 18 });
 
-      n.append('text')
-        .attr('x', 0).attr('y', 24)
-        .attr('text-anchor', 'middle')
-        .style('font-size', '12px')
-        .style('fill', '#1f2937')
-        .text(`Bank: ${bankName}`);
+    }
 
-    } if (d.data.layer > 2) {
+    if (d.data.layer > 2) {
 
- const isRepeated = d.data.transactions_from_parent &&
-                    d.data.transactions_from_parent.length > 1;
+ const txsFromParent = (d && d.data && Array.isArray(d.data.transactions_from_parent)) ? d.data.transactions_from_parent : [];
+ const isRepeated = txsFromParent.length > 1;
 
  // ✅ Remove old amount before adding new
   n.selectAll(".amt-text").remove();
 
- // Acc No
- n.append("text")
-   .attr("x", 0)
-   .attr("y", -30)
-   .attr("text-anchor", "middle")
-   .style("font-size", "13px")
-   .style("font-weight", "bold")
-   .style("fill", "#000")
-   .text(`Acc No: ${d.data.name ?? "Acc ?"}`);
+    // Build the lines for deeper layers and append centered
+    const deepLines = [];
+    deepLines.push({ text: `Acc No: ${d.data.name ?? 'Acc ?'}`, size: 13, weight: 'bold', fill: '#000' });
+    if (d.data.bank) deepLines.push({ text: `Bank: ${d.data.bank}`, size: 12, fill: '#000' });
+    deepLines.push({ text: `IFSC Code: ${d.data.ifsc}`, size: 12, fill: '#1f2937' });
 
- // Bank Name
- if (d.data.bank) {
-   n.append("text")
-     .attr("x", 0)
-     .attr("y", -10)
-     .attr("text-anchor", "middle")
-     .style("font-size", "12px")
-     .style("fill", "#000")
-     .text(`Bank: ${d.data.bank}`);
- }
+    const branchLabel = d.data.branch || branchCache.get(d.data.ifsc) || 'Unknown';
+    deepLines.push({ text: `Branch: ${branchLabel}`, size: 12, fill: '#1f2937', class: 'branch-text' });
 
-   n.append('text')
-       .attr('x', 0).attr('y', 5)
-       .attr('text-anchor', 'middle')
-       .style('font-size', '12px')
-       .style('fill', '#1f2937')
-       .text(`IFSC Code: ${d.data.ifsc}`);
+    // Only show amount when not repeated
+    // isRepeated computed above
+    if (!isRepeated) {
+      const amount = Number(d.data.amt || 0).toLocaleString('en-IN');
+      deepLines.push({ text: `Amt: ₹${amount}`, size: 12, fill: '#000', class: 'amt-text' });
+    }
 
-  const branchLabel = d.data.branch || branchCache.get(d.data.ifsc) || 'Unknown';
-  const branchText = n.append("text")
-    .attr("x", 0)
-    .attr("y", 22)
-    .attr("text-anchor", "middle")
-    .attr("class", "branch-text")
-    .style("font-size", "12px")
-    .style("fill", "#1f2937")
-    .text(`Branch: ${branchLabel}`);
+    appendCenteredLines(n, deepLines, { lineHeight: 16 });
   
   // If branch is not available yet, fetch it and update the text element
   if (d.data.ifsc && !d.data.branch && !branchCache.get(d.data.ifsc)) {
@@ -775,18 +766,6 @@ function drawTree(root) {
     });
   }
 
- // ✅ Only show normal amount when not repeated
- if (!isRepeated) {
-   const amount = Number(d.data.amt || 0).toLocaleString('en-IN');
-   n.append("text")
-     .attr("class", "amt-text")
-     .attr("x", 0)
-     .attr("y", 38)
-     .attr("text-anchor", "middle")
-     .style("font-size", "12px")
-     .style("fill", "#000")
-     .text(`Amt: ₹${amount}`);
- }
 }
 
     // Adjust box width and text sizing to prevent overflow
@@ -1483,9 +1462,9 @@ function downloadHoldGraphPdf(path, ackNo) {
   const svgNS = "http://www.w3.org/2000/svg";
   const width = 1000;
   const margin = 150;
-  const boxWidth = 370;
-  const boxHeight = 170;
-  const verticalSpacing = 260;
+  const boxWidth = 520;
+  const boxHeight = 280;
+  const verticalSpacing = 360;
 
   // Calculate nodes per page: A4 height ~842 points, pdfWidth=350, scale accordingly
   const pdfPageHeight = 842; // A4 height in points
@@ -1516,6 +1495,38 @@ function downloadHoldGraphPdf(path, ackNo) {
     svg.setAttribute("xmlns", svgNS);
     svg.style.background = "#fff";
 
+    // Helper to add multiline centered text
+    function addMultilineText(svg, x, y, text, fontSize) {
+      const t = document.createElementNS(svgNS, "text");
+      t.setAttribute("x", x);
+      t.setAttribute("y", y);
+      t.setAttribute("text-anchor", "middle");
+      t.setAttribute("font-size", String(fontSize));
+      t.setAttribute("fill", "#000000");
+      t.setAttribute("font-family", "Arial, sans-serif");
+      t.style.textShadow = "0 0 2px white";
+      const maxLen = 32;
+      const lines = [];
+      for (let i = 0; i < text.length; i += maxLen) {
+        lines.push(text.slice(i, i + maxLen));
+      }
+      lines.forEach((line, idx) => {
+        const tsp = document.createElementNS(svgNS, "tspan");
+        tsp.setAttribute("x", x);
+        tsp.setAttribute("dy", idx === 0 ? "0" : "1.35em");
+        tsp.textContent = line;
+        t.appendChild(tsp);
+      });
+      svg.appendChild(t);
+      // return total height occupied
+      return fontSize + (lines.length - 1) * (1.35 * fontSize);
+    }
+    function calcMultilineHeight(text, fontSize) {
+      const maxLen = 32;
+      const lines = Math.max(1, Math.ceil(text.length / maxLen));
+      return fontSize + (lines - 1) * (1.35 * fontSize);
+    }
+
     for (let i = 0; i < chunk.length; i++) {
       const node = chunk[i];
       const globalIndex = startIndex + i;
@@ -1536,7 +1547,7 @@ function downloadHoldGraphPdf(path, ackNo) {
       }
 
 
-      const bankBaseY = globalIndex === 0 ? y + 20 : y + 10;
+      const bankBaseY = globalIndex === 0 ? y + 30 : y + 19;
 
       // Wrap bank name if too long
       const maxLineLength = 25; // Approximate characters per line
@@ -1555,29 +1566,33 @@ function downloadHoldGraphPdf(path, ackNo) {
       if (currentLine) lines.push(currentLine);
 
       const fontSize = 22;
-      const lineHeight = 1.2 * fontSize; // dy="1.2em"
+      const lineHeight = 1.35 * fontSize;
       const bankHeight = fontSize + (lines.length - 1) * lineHeight;
       const nextY = bankBaseY + bankHeight + 10; // Margin after bank text
 
-      // Calculate min and max Y for text
-      let minY = y - 50; // Approximate top
-      let maxY = y - 40 + 26; // text1 at y-40, font 26
-
+      const topY = y - 50;
+      const paddingBox = 20;
+      const singleH = 20;
+      const gap = 18;
+      const txTextCalc = `Transaction ID: ${node.data.txid || "N/A"}`;
+      const txH = calcMultilineHeight(txTextCalc, 18);
+      let bottomYCalc;
       if (globalIndex === 0) {
-        maxY = Math.max(maxY, bankBaseY + bankHeight);
+        bottomYCalc = bankBaseY + bankHeight;
       } else if (globalIndex === path.length - 1) {
-        maxY = Math.max(maxY, nextY + 40 + fontSize); // holdText
+        const baseY = nextY;
+        bottomYCalc = baseY + singleH + gap + singleH + gap + txH + gap + singleH + (node.data.hold_info && node.data.hold_info.amount ? gap + singleH : 0);
       } else {
-        maxY = Math.max(maxY, nextY + 20 + fontSize); // amtText
+        const baseY = nextY;
+        bottomYCalc = baseY + singleH + gap + singleH + gap + txH + gap + singleH;
       }
+      const rectY = topY - paddingBox;
+      const dynamicBoxHeight = Math.max((bottomYCalc - topY) + (paddingBox * 2), boxHeight);
 
-      const requiredHeight = maxY - minY + 40; // Add margin
-      const dynamicBoxHeight = Math.max(requiredHeight, 170); // Minimum height
-
-      // Draw box with dynamic height
+      // Draw box with dynamic height aligned to content bounds
       const rect = document.createElementNS(svgNS, "rect");
       rect.setAttribute("x", x - boxWidth / 2);
-      rect.setAttribute("y", y - dynamicBoxHeight / 2);
+      rect.setAttribute("y", rectY);
       rect.setAttribute("width", boxWidth);
       rect.setAttribute("height", dynamicBoxHeight);
       rect.setAttribute("rx", 14);
@@ -1592,7 +1607,7 @@ function downloadHoldGraphPdf(path, ackNo) {
       text1.setAttribute("y", y - 40);
       text1.setAttribute("text-anchor", "middle");
       text1.setAttribute("font-weight", "bold");
-      text1.setAttribute("font-size", "26");
+      text1.setAttribute("font-size", "24");
       text1.setAttribute("fill", "#000000");
       text1.setAttribute("font-family", "Arial, sans-serif");
       text1.style.textShadow = "0 0 2px white";
@@ -1601,9 +1616,9 @@ function downloadHoldGraphPdf(path, ackNo) {
 
       const accText = document.createElementNS(svgNS, "text");
       accText.setAttribute("x", x);
-      accText.setAttribute("y", globalIndex === 0 ? y : y - 10);
+      accText.setAttribute("y", globalIndex === 0 ? y : y - 6);
       accText.setAttribute("text-anchor", "middle");
-      accText.setAttribute("font-size", "22");
+      accText.setAttribute("font-size", "20");
       accText.setAttribute("fill", "#000000");
       accText.setAttribute("font-family", "Arial, sans-serif");
       accText.style.textShadow = "0 0 2px white";
@@ -1614,7 +1629,7 @@ function downloadHoldGraphPdf(path, ackNo) {
       bankText.setAttribute("x", x);
       bankText.setAttribute("y", bankBaseY);
       bankText.setAttribute("text-anchor", "middle");
-      bankText.setAttribute("font-size", "22");
+      bankText.setAttribute("font-size", "20");
       bankText.setAttribute("fill", "#000000");
       bankText.setAttribute("font-family", "Arial, sans-serif");
       bankText.style.textShadow = "0 0 2px white";
@@ -1622,7 +1637,7 @@ function downloadHoldGraphPdf(path, ackNo) {
       lines.forEach((line, index) => {
         const tspan = document.createElementNS(svgNS, "tspan");
         tspan.setAttribute("x", x);
-        tspan.setAttribute("dy", index === 0 ? "0" : "1.2em");
+        tspan.setAttribute("dy", index === 0 ? "0" : "1.35em");
         tspan.textContent = index === 0 ? `Bank : ${line}` : line;
         bankText.appendChild(tspan);
       });
@@ -1635,7 +1650,7 @@ function downloadHoldGraphPdf(path, ackNo) {
         ifscText.setAttribute("x", x);
         ifscText.setAttribute("y", nextY);
         ifscText.setAttribute("text-anchor", "middle");
-        ifscText.setAttribute("font-size", "22");
+        ifscText.setAttribute("font-size", "20");
         ifscText.setAttribute("fill", "#000000");
         ifscText.setAttribute("font-family", "Arial, sans-serif");
         ifscText.style.textShadow = "0 0 2px white";
@@ -1644,22 +1659,38 @@ function downloadHoldGraphPdf(path, ackNo) {
 
         const amtText = document.createElementNS(svgNS, "text");
         amtText.setAttribute("x", x);
-        amtText.setAttribute("y", nextY + 20);
+        amtText.setAttribute("y", nextY + singleH + gap);
         amtText.setAttribute("text-anchor", "middle");
-        amtText.setAttribute("font-size", "22");
+        amtText.setAttribute("font-size", "20");
         amtText.setAttribute("fill", "#000000");
         amtText.setAttribute("font-family", "Arial, sans-serif");
         amtText.style.textShadow = "0 0 2px white";
         amtText.textContent = `Transacted Amount: ₹${node.data.amt || "0.0"}`;
         svg.appendChild(amtText);
 
+        const txStartY = nextY + singleH * 2 + gap * 2;
+        const txHeight = addMultilineText(svg, x, txStartY, `Transaction ID: ${node.data.txid || "N/A"}`, 18);
+
+        const disputedVal = (node.data.disputed && node.data.disputed !== "None") ? node.data.disputed : "0.0";
+        const dispY = txStartY + txHeight + gap;
+        const dispText = document.createElementNS(svgNS, "text");
+        dispText.setAttribute("x", x);
+        dispText.setAttribute("y", dispY);
+        dispText.setAttribute("text-anchor", "middle");
+        dispText.setAttribute("font-size", "20");
+        dispText.setAttribute("fill", "#000000");
+        dispText.setAttribute("font-family", "Arial, sans-serif");
+        dispText.style.textShadow = "0 0 2px white";
+        dispText.textContent = `Disputed Amount: ₹${disputedVal}`;
+        svg.appendChild(dispText);
+
         const holdInfo = node.data.hold_info;
         if (holdInfo && holdInfo.amount) {
           const holdText = document.createElementNS(svgNS, "text");
           holdText.setAttribute("x", x);
-          holdText.setAttribute("y", nextY + 40);
+          holdText.setAttribute("y", dispY + singleH + gap);
           holdText.setAttribute("text-anchor", "middle");
-          holdText.setAttribute("font-size", "22");
+          holdText.setAttribute("font-size", "20");
           holdText.setAttribute("fill", "#000000");
           holdText.setAttribute("font-family", "Arial, sans-serif");
           holdText.style.textShadow = "0 0 2px white";
@@ -1672,7 +1703,7 @@ function downloadHoldGraphPdf(path, ackNo) {
         ifscText.setAttribute("x", x);
         ifscText.setAttribute("y", nextY);
         ifscText.setAttribute("text-anchor", "middle");
-        ifscText.setAttribute("font-size", "22");
+        ifscText.setAttribute("font-size", "20");
         ifscText.setAttribute("fill", "#000000");
         ifscText.setAttribute("font-family", "Arial, sans-serif");
         ifscText.style.textShadow = "0 0 2px white";
@@ -1681,14 +1712,30 @@ function downloadHoldGraphPdf(path, ackNo) {
 
         const amtText = document.createElementNS(svgNS, "text");
         amtText.setAttribute("x", x);
-        amtText.setAttribute("y", nextY + 20);
+        amtText.setAttribute("y", nextY + singleH + gap);
         amtText.setAttribute("text-anchor", "middle");
-        amtText.setAttribute("font-size", "22");
+        amtText.setAttribute("font-size", "20");
         amtText.setAttribute("fill", "#000000");
         amtText.setAttribute("font-family", "Arial, sans-serif");
         amtText.style.textShadow = "0 0 2px white";
         amtText.textContent = `Transacted Amt: ₹${node.data.amt || "0.0"}`;
       svg.appendChild(amtText);
+
+        const txStartY = nextY + singleH * 2 + gap * 2;
+        const txHeight = addMultilineText(svg, x, txStartY, `Transaction ID: ${node.data.txid || "N/A"}`, 18);
+
+        const disputedVal = (node.data.disputed && node.data.disputed !== "None") ? node.data.disputed : "0.0";
+        const dispY = txStartY + txHeight + gap;
+        const dispText = document.createElementNS(svgNS, "text");
+        dispText.setAttribute("x", x);
+        dispText.setAttribute("y", dispY);
+        dispText.setAttribute("text-anchor", "middle");
+        dispText.setAttribute("font-size", "20");
+        dispText.setAttribute("fill", "#000000");
+        dispText.setAttribute("font-family", "Arial, sans-serif");
+        dispText.style.textShadow = "0 0 2px white";
+        dispText.textContent = `Disputed Amt: ₹${disputedVal}`;
+        svg.appendChild(dispText);
 
     }
 
@@ -1696,9 +1743,9 @@ function downloadHoldGraphPdf(path, ackNo) {
       if (i < chunk.length - 1) {
         const line = document.createElementNS(svgNS, "line");
         line.setAttribute("x1", x);
-        line.setAttribute("y1", y + boxHeight / 2);
+        line.setAttribute("y1", rectY + dynamicBoxHeight);
         line.setAttribute("x2", x);
-      line.setAttribute("y2", y + verticalSpacing - boxHeight / 2);
+        line.setAttribute("y2", y + verticalSpacing - (paddingBox)); // connect from bottom of current box to next
         line.setAttribute("stroke", "#888");
         line.setAttribute("stroke-width", 2);
         svg.appendChild(line);

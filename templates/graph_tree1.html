@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Fund Flow Graph</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <!-- D3.js -->
@@ -123,6 +124,7 @@
       margin-top: 20px;
       padding-top: 20px;
       border-top: 1px solid #e5e7eb;
+      display: none;
     }
 
     #kycDetailsSection h3 {
@@ -333,6 +335,44 @@
       color: #6b7280;
       margin-right: 10px;
     }
+
+    /* Helper classes to replace inline styles flagged by linter */
+    .user-info-inline { display: flex; align-items: center; gap: 12px; }
+    .header-links { margin-left: 8px; }
+    .header-link { color: #93c5fd; text-decoration: none; font-weight: bold; }
+    .logout-link { color: #b71616; text-decoration: none; font-weight: bold; }
+    .kyc-actions { margin-top: 12px; }
+    #saveKycBtn { display: none; }
+    .details-footer { text-align: center; margin-top: 20px; padding-top: 10px; border-top: 1px solid #e5e7eb; }
+    #holdModalTitle { margin: 0; }
+    #holdStatusText { margin-top: 0; color: #050505; }
+    .overflow-auto { overflow: auto; }
+
+    /* Legend box styles moved from inline to CSS */
+    .legend-box {
+      display: none;
+      position: fixed;
+      top: 100px;
+      right: 30px;
+      background: #f9fafb;
+      padding: 24px 28px;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      max-width: 380px;
+      font-family: 'Segoe UI', Roboto, sans-serif;
+      font-size: 14.5px;
+      color: #111827;
+      z-index: 9999;
+      border-left: 5px solid #3b82f6;
+      line-height: 1.9;
+    }
+    .legend-header { display:flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .legend-title { margin: 0; font-size: 16px; font-weight: 600; color: #1d4ed8; }
+    .legend-close { font-size: 20px; background: none; border: none; color: #9ca3af; cursor: pointer; }
+    .legend-list { padding-left: 20px; margin: 0; }
+    .legend-list li { margin-bottom: 10px; }
+    .legend-hr { margin: 16px 0; border: none; border-top: 1px dashed #d1d5db; }
+    .legend-interaction { margin: 0 0 8px 0; font-weight: 600; color: #374151; }
 
     /* Tooltip */
     .tooltip {
@@ -681,7 +721,7 @@
       <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="TN Logo" class="logo-small">
       <h2>Fund Flow Graph - Ack No: {{ ack_no }}</h2>
     </div>
-    <div class="user-info" style="display: flex; align-items: center; gap: 12px;">
+    <div class="user-info user-info-inline">
       <input id="headerSearch" class="search-input" type="text" placeholder="Search account number" list="accountList">
       <datalist id="accountList"></datalist>
       <button id="legendToggle" class="icon-btn" title="Show Legend" aria-label="Show Legend">📚</button>
@@ -689,9 +729,9 @@
       <button id="expandAllBtn" class="icon-btn expand" title="Expand All Nodes" aria-label="Expand All Nodes">🗂️</button>
       <button id="putOnHoldBtn" class="icon-btn" title="Put on Hold" aria-label="Put on Hold">🔒</button>
       <button id="atmWithdrawalBtn" class="icon-btn" title="ATM Withdrawal" aria-label="ATM Withdrawal">🏧</button>
-      <div style="margin-left: 8px;">
-        <a href="{{ url_for('index') }}" style="color: #93c5fd; text-decoration: none; font-weight: bold;">Dashboard</a> |
-        <a href="{{ url_for('logout') }}" style="color: #b71616; text-decoration: none; font-weight: bold;">Logout</a>
+      <div class="header-links">
+        <a href="{{ url_for('index') }}" class="header-link">Dashboard</a> |
+        <a href="{{ url_for('logout') }}" class="logout-link">Logout</a>
       </div>
     </div>
 
@@ -714,7 +754,7 @@
       </div>
       
       <!-- KYC Details Section (initially hidden) -->
-      <div id="kycDetailsSection" style="display: none;">
+      <div id="kycDetailsSection">
         <h3>KYC Details</h3>
         <form id="kycForm">
           <div class="detail-row"><label><b>Txn ID:</b></label><input id="kycTxnId" readonly></div>
@@ -722,14 +762,14 @@
           <div class="detail-row"><label><b>Aadhaar No:</b></label><input id="kycAadhar" required disabled></div>
           <div class="detail-row"><label><b>Mobile No:</b></label><input id="kycMobile" required disabled></div>
           <div class="detail-row"><label><b>Address:</b></label><textarea id="kycAddress" required disabled></textarea></div>
-          <div style="margin-top: 12px;">
+          <div class="kyc-actions">
             <button type="button" id="editKycBtn">Edit</button>
-            <button type="submit" id="saveKycBtn" style="display: none;">Save KYC</button>
+            <button type="submit" id="saveKycBtn">Save KYC</button>
           </div>
         </form>
       </div>
 
-      <div style="text-align: center; margin-top: 20px; padding-top: 10px; border-top: 1px solid #e5e7eb;">
+      <div class="details-footer">
         <!---  <button id="downloadDetailsPdf" style="background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold;">🖨️ Download Transaction details</button> -->
       </div>
     </div>
@@ -755,7 +795,7 @@
       <div class="hold-modal" role="dialog" aria-modal="true" aria-labelledby="holdModalTitle">
         <div class="hold-modal-header">
           <div class="hold-modal-header-title">
-            <h3 id="holdModalTitle" style="margin:0;">Put on Hold Transactions</h3>
+            <h3 id="holdModalTitle">Put on Hold Transactions</h3>
           </div>
           <div class="hold-modal-header-actions">
             <button id="holdLetterBtn" class="hold-header-icon-btn" title="Generate Letter" aria-label="Generate Letter">📄</button>
@@ -764,8 +804,8 @@
           </div>
         </div>
         <div class="hold-modal-body">
-          <p id="holdStatusText" style="margin-top:0; color:#050505;">Loading...</p>
-          <div style="overflow:auto;">
+          <p id="holdStatusText">Loading...</p>
+          <div class="overflow-auto">
             <table class="hold-table">
               <thead>
                 <tr>
@@ -1033,21 +1073,28 @@
       if (data.length === 0) {
         html = '<p>No data available.</p>';
       } else {
-        data.forEach(stateData => {
-          html += `
-            <div class="summary-section">
-              <h3 class="state-link" style="cursor:pointer; color:#3b82f6;" data-state="${stateData.state || 'Unknown'}">State: ${stateData.state || 'Unknown'}</h3>
-              <div class="summary-row">
-                <span class="summary-label">Total Transactions:</span>
-                <span class="summary-value">${Number(stateData.total_transactions || 0).toLocaleString('en-IN')}</span>
-              </div>
-              <div class="summary-row">
-                <span class="summary-label">Total Amount:</span>
-                <span class="summary-value">₹${Number(stateData.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              </div>
-            </div>
-          `;
-        });
+        html = `
+          <table style="width:100%; border-collapse:collapse; margin-top:10px;">
+            <thead>
+              <tr style="background:#f3f4f6;">
+                <th style="border:1px solid #e5e7eb; padding:8px; text-align:left; font-weight:600;">State</th>
+                <th style="border:1px solid #e5e7eb; padding:8px; text-align:left; font-weight:600;">Total Transactions</th>
+                <th style="border:1px solid #e5e7eb; padding:8px; text-align:left; font-weight:600;">Total Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.map(stateData => `
+                <tr>
+                  <td style="border:1px solid #e5e7eb; padding:8px;">
+                    <span class="state-link" style="cursor:pointer; color:#3b82f6;" data-state="${stateData.state || 'Unknown'}">${stateData.state || 'Unknown'}</span>
+                  </td>
+                  <td style="border:1px solid #e5e7eb; padding:8px;">${Number(stateData.total_transactions || 0).toLocaleString('en-IN')}</td>
+                  <td style="border:1px solid #e5e7eb; padding:8px;">₹${Number(stateData.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
       }
       summaryContent.innerHTML = html;
       const summaryPanel = document.getElementById('summaryPanel');
@@ -1178,50 +1225,30 @@
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="{{ url_for('static', filename='graph.js') }}"></script>
 <!-- 🌟 Enhanced PROFESSIONAL LEGEND PANEL -->
-<div class="legend-box" style="
-    display: none;
-    position: fixed;
-    top: 100px;
-    right: 30px;
-    background: #f9fafb;
-    padding: 24px 28px;
-    border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-    max-width: 380px;
-    font-family: 'Segoe UI', Roboto, sans-serif;
-    font-size: 14.5px;
-    color: #111827;
-    z-index: 9999;
-    border-left: 5px solid #3b82f6;
-    line-height: 1.9;
-">
+<div class="legend-box">
 
   <!-- Header with close button -->
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-    <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: #1d4ed8;">
-      📘 Fund Flow Graph Legend
-    </h3>
-    <button onclick="document.querySelector('.legend-box').style.display='none'"
-            style="font-size: 20px; background: none; border: none; color: #9ca3af; cursor: pointer;">×</button>
+  <div class="legend-header">
+    <h3 class="legend-title">📘 Fund Flow Graph Legend</h3>
+    <button class="legend-close" onclick="document.querySelector('.legend-box').style.display='none'">×</button>
   </div>
 
   <!-- Section: Legend Items -->
-  <ul style="padding-left: 20px; margin: 0;">
-    <!-- <li style="margin-bottom: 10px;"><strong>📥 Incoming:</strong> Received funds from multiple sources.</li> -->
-    <li style="margin-bottom: 10px;"><strong>🔁 Repeater:</strong> Transactions Between Accounts.</li>
-    <li style="margin-bottom: 10px;"><strong>🏧 ATM:</strong> ATM withdrawal involved.</li>
-    <li style="margin-bottom: 10px;"><strong>🎫 Cheque:</strong> Transaction via cheque.</li>
-    <li style="margin-bottom: 10px;"><strong>🔒 Hold:</strong> Amount currently on hold.</li>
-    <li style="margin-bottom: 10px;"><strong>💥 Burst:</strong> Sends to 20+ accounts (disabled expansion).</li>
-    <li style="margin-bottom: 10px;"><strong>🖨️ Print:</strong> Print the transection detials for the hold amount.</li>
+  <ul class="legend-list">
+    <li><strong>🔁 Repeater:</strong> Transactions Between Accounts.</li>
+    <li><strong>🏧 ATM:</strong> ATM withdrawal involved.</li>
+    <li><strong>🎫 Cheque:</strong> Transaction via cheque.</li>
+    <li><strong>🔒 Hold:</strong> Amount currently on hold.</li>
+    <li><strong>💥 Burst:</strong> Sends to 20+ accounts (disabled expansion).</li>
+    <li><strong>🖨️ Print:</strong> Print the transection detials for the hold amount.</li>
   </ul>
 
   <!-- Dashed Divider -->
-  <hr style="margin: 16px 0; border: none; border-top: 1px dashed #d1d5db;">
+  <hr class="legend-hr">
 
   <!-- Section: Interaction -->
-  <p style="margin: 0 0 8px 0; font-weight: 600; color: #374151;">💡 Interaction</p>
-  <ul style="padding-left: 20px; margin: 0;">
+  <p class="legend-interaction">💡 Interaction</p>
+  <ul class="legend-list">
     <li style="margin-bottom: 8px;"><strong>🔘 Single Click:</strong> Expand or Collapse</li>
     <li style="margin-bottom: 8px;"><strong>🟠 Double Click:</strong> View full KYC & Transaction</li>
     <li style="margin-bottom: 4px;"><strong>🔘 Icon Click:</strong> View ATM/Cheque/Hold info</li>

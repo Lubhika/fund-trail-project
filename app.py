@@ -3,7 +3,8 @@ from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
 from collections import defaultdict
 import os
-from models import db, User, Transaction, UploadedFile, Complaint
+import io
+from models import db, User, Transaction, UploadedFile, Complaint, UsageLog
 import pandas as pd  # pyright: ignore[reportMissingImports]
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask_login import login_required, LoginManager, login_user  # pyright: ignore[reportMissingImports]
@@ -105,6 +106,29 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 db.init_app(app)
 
+def ensure_usage_log_table():
+    inspector = inspect(db.engine)
+    if 'usage_log' not in inspector.get_table_names():
+        db.create_all()
+
+def log_usage(action, filename=None, ack_no=None):
+    try:
+        entry = UsageLog(
+            username=session.get('username'),
+            role=session.get('role'),
+            action=action,
+            filename=filename,
+            ack_no=ack_no
+        )
+        db.session.add(entry)
+        db.session.commit()
+    except Exception as e:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        print(f"UsageLog error: {e}")
+
 def ensure_transaction_columns():
     """Add any newly introduced columns to the transaction table if missing."""
     required_columns = {
@@ -184,6 +208,7 @@ def ensure_user_columns():
 with app.app_context():
     ensure_transaction_columns()
     ensure_user_columns()
+    ensure_usage_log_table()
 
 
 USERS = {
@@ -210,12 +235,14 @@ def login():
         if role == 'Viewer':
             session['username'] = 'viewer'
             session['role'] = 'Viewer'
+            log_usage('login')
             return redirect('/index')
 
         user = User.query.filter_by(username=username, role=role).first()
         if user and user.check_password(password):
             session['username'] = username
             session['role'] = role
+            log_usage('login')
             return redirect('/admin_dashboard') if role == 'Admin' else redirect('/index')
         else:
             error = "Invalid credentials or role"
@@ -223,6 +250,7 @@ def login():
 
 @app.route('/logout')
 def logout():
+    log_usage('logout')
     session.clear()
     return redirect('/login')
 
@@ -305,6 +333,7 @@ def upload_excel():
         )
         db.session.add(uploaded_file)
         db.session.commit()
+        log_usage('upload_excel', filename=filename)
 
         # ✅ Step 5: Process and insert transactions
         atm_df = pd.read_excel(xls, sheet_name='Withdrawal through ATM') if 'Withdrawal through ATM' in xls.sheet_names else pd.DataFrame()
@@ -314,9 +343,27 @@ def upload_excel():
         def normalize_columns(df):
             return [str(c).encode('ascii', 'ignore').decode().strip().replace('\u00A0', ' ').replace('\xa0', ' ') for c in df.columns]
 
+        # Normalize all dataframe columns for consistent matching
+        tx_df.columns = normalize_columns(tx_df)
         if not atm_df.empty: atm_df.columns = normalize_columns(atm_df)
         if not chq_df.empty: chq_df.columns = normalize_columns(chq_df)
         if not hold_df.empty: hold_df.columns = normalize_columns(hold_df)
+        
+        # DEBUG: Print all columns in Excel
+        print("="*80)
+        print("[UPLOAD DEBUG] All columns in 'Money Transfer to' sheet:")
+        for i, col in enumerate(tx_df.columns):
+            print(f"  {i}: '{col}'")
+        print("="*80)
+        
+        # DEBUG: Print first row to see data
+        if not tx_df.empty:
+            print("[UPLOAD DEBUG] First row data:")
+            for col in tx_df.columns:
+                val = tx_df.iloc[0].get(col, '')
+                if str(val).strip():
+                    print(f"  {col}: {val}")
+            print("="*80)
 
         def clean_amount(value):
             if pd.isna(value): return 0.0
@@ -359,6 +406,21 @@ def upload_excel():
             if len(s) > 100:
                 s = s[:100]
             return s
+        
+        def safe_txn_id(val):
+            if pd.isna(val) or val is None:
+                return ''
+            s = str(val).strip()
+            if re.fullmatch(r'\d+\.0', s):
+                s = s[:-2]
+            if re.fullmatch(r'\d+(\.\d+)?e\+\d+', s, flags=re.IGNORECASE):
+                try:
+                    num = pd.to_numeric(val, errors='coerce')
+                    if pd.notna(num):
+                        s = f"{int(num):d}"
+                except Exception:
+                    pass
+            return s
 
         def get_first_value(df, columns):
             """Return first non-empty value for given column names from df."""
@@ -370,8 +432,159 @@ def upload_excel():
                     if pd.notna(val) and str(val).strip():
                         return str(val).strip()
             return None
+        
+        def norm(s):
+            s = str(s).replace('\u00a0', ' ')
+            s = re.sub(r'[\s/_\-\.]+', ' ', s).lower().strip()
+            return s
+        
+        def get_txn_id_from_row(row, utr2_col=None):
+            """Extract Transaction ID / UTR Number2 from a row."""
+            # Try the detected column first (if provided)
+            if utr2_col and utr2_col in row.index:
+                val = row.get(utr2_col, '')
+                s = safe_txn_id(val)
+                if s:
+                    return s
+            
+            # Try common column name variants (exact matches) - EXPANDED LIST
+            variants = [
+                'Transaction ID / UTR Number2',
+                'Transaction Id / UTR Number2',
+                'Transaction ID/ UTR Number2',
+                'Transaction ID/UTR Number2',
+                'Transaction ID / UTR Number 2',
+                'Transaction Id / UTR Number 2',
+                'Txn ID / UTR Number2',
+                'Txn Id / UTR Number2',
+                'UTR Number2',
+                'Txn ID / UTR Number 2',
+                'Txn Id / UTR Number 2',
+                'Transaction ID/UTR Number 2',
+                'Txn ID/UTR Number2',
+                'Transaction ID / UTR',
+                'Transaction ID/UTR',
+                'Txn ID/UTR',
+                'Transaction ID / UTR Number',
+                'Txn ID / UTR Number',
+                'UTR Number',
+                'UTR',
+            ]
+            for col in variants:
+                if col in row.index:
+                    val = row.get(col, '')
+                    s = safe_txn_id(val)
+                    if s:
+                        return s
+            
+            # Fuzzy matching: Look for columns containing UTR and Number 2 in normalized form
+            def norm(s):
+                s = str(s).replace('\u00a0', ' ')
+                s = re.sub(r'[\s/_\-\.]+', ' ', s).lower().strip()
+                return s
+            
+            for col in row.index:
+                nc = norm(col)
+                # Match columns that have UTR and (NUMBER 2 or ends with 2) and (TRANSACTION or TXN or ID)
+                has_utr = 'utr' in nc
+                has_number2 = ('number 2' in nc) or ('number2' in nc) or nc.endswith(' 2')
+                has_txn_id = any(x in nc for x in ['transaction', 'txn', 'id'])
+                
+                if has_utr and has_number2 and has_txn_id:
+                    val = row.get(col, '')
+                    s = safe_txn_id(val)
+                    if s:
+                        return s
+            
+            # Last resort: Try any column with just "UTR" and "NUMBER"
+            for col in row.index:
+                nc = norm(col)
+                if 'utr' in nc and 'number' in nc:
+                    val = row.get(col, '')
+                    s = safe_txn_id(val)
+                    if s:
+                        return s
+            
+            return ''
+        
+        def find_utr2_column(columns):
+            """Find the 'Transaction ID / UTR Number2' column among various possible names."""
+            # First, try exact matches
+            exact_matches = [
+                'Transaction ID / UTR Number2',
+                'Transaction Id / UTR Number2',
+                'Transaction ID/ UTR Number2',
+                'Transaction ID/UTR Number2',
+                'Transaction ID / UTR Number 2',
+                'Transaction Id / UTR Number 2',
+                'Txn ID / UTR Number2',
+                'Txn Id / UTR Number2',
+                'Txn ID / UTR Number 2',
+                'Txn Id / UTR Number 2',
+                'UTR Number2',
+                'Txn ID/UTR Number2',
+                'Transaction ID/UTR Number 2',
+                'Transaction ID / UTR',
+                'Transaction ID/UTR',
+                'Txn ID/UTR',
+                'Transaction ID / UTR Number',
+            ]
+            for col in columns:
+                if col in exact_matches:
+                    print(f"[FIND_UTR2] Exact match found: {col}")
+                    return col
+            
+            # Then try fuzzy matching with normalized names
+            def norm(s):
+                s = str(s).replace('\u00a0', ' ')
+                s = re.sub(r'[\s/_\-\.]+', ' ', s).lower().strip()
+                return s
+            
+            known_normalized = [
+                'transaction id utr number2',
+                'transaction id utr number 2',
+                'transaction id  utr number2',
+                'transaction id  utr number 2',
+                'transaction id number2',
+                'transaction id utr',
+                'txn id utr number2',
+                'txn id utr number 2',
+                'txn id utr',
+                'utr number2',
+                'utr number 2',
+            ]
+            
+            normalized_map = {col: norm(col) for col in columns}
+            for col, nc in normalized_map.items():
+                if nc in known_normalized:
+                    print(f"[FIND_UTR2] Normalized match found: '{col}' -> '{nc}'")
+                    return col
+            
+            # Final fallback: Look for columns with all required components
+            for col, nc in normalized_map.items():
+                has_utr = 'utr' in nc
+                has_number2 = ('number 2' in nc) or ('number2' in nc) or nc.endswith(' 2')
+                has_txn_id = any(x in nc for x in ['transaction', 'txn', 'id'])
+                
+                if has_utr and has_number2 and has_txn_id:
+                    print(f"[FIND_UTR2] Fuzzy pattern match found: '{col}' -> '{nc}'")
+                    return col
+            
+            # Try ANY column with UTR in name
+            for col, nc in normalized_map.items():
+                if 'utr' in nc and 'number' in nc:
+                    print(f"[FIND_UTR2] Fallback match (UTR + Number): '{col}' -> '{nc}'")
+                    return col
+            
+            print(f"[FIND_UTR2] No match found. Available normalized columns: {list(normalized_map.values())}")
+            return None
 
-        for _, row in tx_df.iterrows():
+        utr2_col = find_utr2_column(tx_df.columns)
+        print(f"[UPLOAD] Excel columns in 'Money Transfer to': {list(tx_df.columns)}")
+        print(f"[UPLOAD] Detected UTR2 column: {utr2_col}")
+        
+        txn_id_counts = {'found': 0, 'missing': 0}
+        for idx, (_, row) in enumerate(tx_df.iterrows()):
             ack_no = str(row.get('Acknowledgement No.', '')).strip()
             if not ack_no:
                 # ✅ Skip rows with missing ACK
@@ -382,6 +595,20 @@ def upload_excel():
             chq_info = chq_df[chq_df['Account No./ (Wallet /PG/PA) Id'].astype(str).str.strip() == acc_to] if not chq_df.empty else pd.DataFrame()
             hold_info = hold_df[hold_df['Account No./ (Wallet /PG/PA) Id'].astype(str).str.strip() == acc_to] if not hold_df.empty else pd.DataFrame()
 
+            extracted_txn_id = get_txn_id_from_row(row, utr2_col)
+            if extracted_txn_id:
+                txn_id_counts['found'] += 1
+                if idx < 2:  # Log first 2 rows with txn_id
+                    print(f"[UPLOAD] Row {idx}: ACK={ack_no}, Account={acc_to}, TXN_ID={extracted_txn_id}")
+            else:
+                txn_id_counts['missing'] += 1
+                if idx < 2:  # Log first 2 rows without txn_id
+                    print(f"[UPLOAD] Row {idx}: ACK={ack_no}, Account={acc_to}, TXN_ID=EMPTY")
+                    # Debug: print what's in the row related to UTR/Transaction
+                    for col in row.index:
+                        if 'utr' in col.lower() or 'transaction' in col.lower() or 'txn' in col.lower():
+                            print(f"  -> {col}: {row.get(col, '')}")
+            
             transaction = Transaction(
                 layer=int(row.get('Layer', 0)),
                 from_account=str(row.get('Account No./ (Wallet /PG/PA) Id', '')).strip(),
@@ -391,7 +618,7 @@ def upload_excel():
                 bank_name=clean_bank_name(row.get('Bank/FIs')),
                 ifsc_code=str(row.get('Ifsc Code', '')).strip(),
                 txn_date=str(row.get('Transaction Date', '')).strip(),
-                txn_id=str(row.get('Transaction ID / UTR Number2', '')).strip(),
+                txn_id=extracted_txn_id,
                 amount=clean_amount(row.get('Transaction Amount')),
                 disputed_amount=clean_amount(row.get('Disputed Amount')),
                 action_taken=str(row.get('Action Taken By bank', '')).strip(),
@@ -419,6 +646,7 @@ def upload_excel():
             db.session.add(transaction)
 
         db.session.commit()
+        print(f"[UPLOAD] Txn ID extraction summary: Found={txn_id_counts['found']}, Missing={txn_id_counts['missing']}")
         flash("✅ Excel uploaded and data saved successfully.", "success")
 
     except Exception as e:
@@ -430,10 +658,22 @@ def upload_excel():
 @app.route('/view_graph')
 def view_graph():
     ack_no = request.args.get('ack_no')
+    try:
+        fname_row = db.session.query(UploadedFile.filename).join(Transaction, Transaction.upload_id == UploadedFile.id).filter(Transaction.ack_no == ack_no).order_by(UploadedFile.upload_time.desc()).first()
+        fname = fname_row[0] if fname_row else None
+        log_usage('view_graph', filename=fname, ack_no=ack_no)
+    except Exception as e:
+        print(f"UsageLog view_graph error: {e}")
     return redirect(url_for('graph_tree1', ack_no=ack_no))
 
 @app.route('/graph/<ack_no>')
 def graph_tree1(ack_no):
+    try:
+        fname_row = db.session.query(UploadedFile.filename).join(Transaction, Transaction.upload_id == UploadedFile.id).filter(Transaction.ack_no == ack_no).order_by(UploadedFile.upload_time.desc()).first()
+        fname = fname_row[0] if fname_row else None
+        log_usage('graph_page', filename=fname, ack_no=ack_no)
+    except Exception as e:
+        print(f"UsageLog graph_page error: {e}")
     return render_template('graph_tree1.html', ack_no=ack_no, role=session.get('role'))
 
 @app.route('/complaints')
@@ -458,6 +698,245 @@ def graph_data(ack_no):
         if not transactions:
             print(f"No transactions found for ACK {ack_no}")
             return jsonify({'error': 'No transactions found for this Acknowledgement No.'})
+
+        def norm(s):
+            s = str(s).replace('\u00a0', ' ')
+            s = re.sub(r'[\s/_\-\.]+', ' ', s).lower().strip()
+            return s
+        
+        def safe_txn_id(val):
+            if pd.isna(val) or val is None:
+                return ''
+            s = str(val).strip()
+            if re.fullmatch(r'\d+\.0', s):
+                s = s[:-2]
+            if re.fullmatch(r'\d+(\.\d+)?e\+\d+', s, flags=re.IGNORECASE):
+                try:
+                    num = pd.to_numeric(val, errors='coerce')
+                    if pd.notna(num):
+                        s = f"{int(num):d}"
+                except Exception:
+                    pass
+            return s
+        
+        def find_utr2_column(columns):
+            """Find the 'Transaction ID / UTR Number2' column among various possible names."""
+            # First, try exact matches
+            exact_matches = [
+                'Transaction ID / UTR Number2',
+                'Transaction Id / UTR Number2',
+                'Transaction ID/ UTR Number2',
+                'Transaction ID/UTR Number2',
+                'Transaction ID / UTR Number 2',
+                'Transaction Id / UTR Number 2',
+                'Txn ID / UTR Number2',
+                'Txn Id / UTR Number2',
+                'Txn ID / UTR Number 2',
+                'Txn Id / UTR Number 2',
+                'UTR Number2',
+                'Txn ID/UTR Number2',
+                'Transaction ID/UTR Number 2',
+                'Transaction ID / UTR',
+                'Transaction ID/UTR',
+                'Txn ID/UTR',
+                'Transaction ID / UTR Number',
+            ]
+            for col in columns:
+                if col in exact_matches:
+                    return col
+            
+            # Then try fuzzy matching with normalized names
+            known_normalized = [
+                'transaction id utr number2',
+                'transaction id utr number 2',
+                'transaction id  utr number2',
+                'transaction id  utr number 2',
+                'transaction id number2',
+                'transaction id utr',
+                'txn id utr number2',
+                'txn id utr number 2',
+                'txn id utr',
+                'utr number2',
+                'utr number 2',
+            ]
+            
+            normalized_map = {col: norm(col) for col in columns}
+            for col, nc in normalized_map.items():
+                if nc in known_normalized:
+                    return col
+            
+            # Final fallback: Look for columns with all required components
+            for col, nc in normalized_map.items():
+                has_utr = 'utr' in nc
+                has_number2 = ('number 2' in nc) or ('number2' in nc) or nc.endswith(' 2')
+                has_txn_id = any(x in nc for x in ['transaction', 'txn', 'id'])
+                
+                if has_utr and has_number2 and has_txn_id:
+                    return col
+            
+            # Try ANY column with UTR in name
+            for col, nc in normalized_map.items():
+                if 'utr' in nc and 'number' in nc:
+                    return col
+            
+            return None
+        
+        def get_txn_id_from_df_row(row, utr2_col):
+            """Extract Transaction ID / UTR Number2 from a dataframe row."""
+            # Try the detected column first (if provided)
+            if utr2_col and utr2_col in row.index:
+                s = safe_txn_id(row.get(utr2_col, ''))
+                if s:
+                    return s
+            
+            # Try common column name variants (exact matches) - EXPANDED
+            variants = [
+                'Transaction ID / UTR Number2',
+                'Transaction Id / UTR Number2',
+                'Transaction ID/ UTR Number2',
+                'Transaction ID/UTR Number2',
+                'Transaction ID / UTR Number 2',
+                'Transaction Id / UTR Number 2',
+                'Txn ID / UTR Number2',
+                'Txn Id / UTR Number2',
+                'Txn ID / UTR Number 2',
+                'Txn Id / UTR Number 2',
+                'UTR Number2',
+                'Transaction ID/UTR Number 2',
+                'Txn ID/UTR Number2',
+                'Transaction ID / UTR',
+                'Transaction ID/UTR',
+                'Txn ID/UTR',
+                'Transaction ID / UTR Number',
+                'Txn ID / UTR Number',
+                'UTR Number',
+                'UTR',
+            ]
+            for col in variants:
+                if col in row.index:
+                    s = safe_txn_id(row.get(col, ''))
+                    if s:
+                        return s
+            
+            # Fuzzy matching: Look for columns containing UTR and Number 2
+            for col in row.index:
+                nc = norm(col)
+                has_utr = 'utr' in nc
+                has_number2 = ('number 2' in nc) or ('number2' in nc) or nc.endswith(' 2')
+                has_txn_id = any(x in nc for x in ['transaction', 'txn', 'id'])
+                
+                if has_utr and has_number2 and has_txn_id:
+                    s = safe_txn_id(row.get(col, ''))
+                    if s:
+                        return s
+            
+            # Last resort: Try any column with just "UTR" and "NUMBER"
+            for col in row.index:
+                nc = norm(col)
+                if 'utr' in nc and 'number' in nc:
+                    s = safe_txn_id(row.get(col, ''))
+                    if s:
+                        return s
+            
+            return ''
+        
+        def clean_amt(v):
+            if pd.isna(v) or v is None or v == '':
+                return None
+            try:
+                s = str(v)
+                s = re.sub(r'[^\d\.\-]', '', s)
+                return float(s) if s else None
+            except Exception:
+                return None
+
+        missing = [t for t in transactions if not (t.txn_id and str(t.txn_id).strip())]
+        if missing:
+            by_upload = {}
+            for t in missing:
+                if t.upload_id:
+                    by_upload.setdefault(t.upload_id, []).append(t)
+            for upload_id, txns in by_upload.items():
+                up = UploadedFile.query.get(upload_id)
+                if not up or not up.data:
+                    continue
+                try:
+                    xls = pd.ExcelFile(io.BytesIO(up.data))
+                    if 'Money Transfer to' not in xls.sheet_names:
+                        continue
+                    df = pd.read_excel(xls, sheet_name='Money Transfer to')
+                    utr2_col = find_utr2_column(df.columns)
+                    
+                    # Print column info for debugging
+                    print(f"Excel columns: {list(df.columns)}")
+                    print(f"Detected UTR2 column: {utr2_col}")
+                    
+                    df_map = {}
+                    df_rows = []
+                    
+                    # Build map and also store rows for fuzzy matching
+                    for _, r in df.iterrows():
+                        acc = str(r.get('Account No', '')).strip()
+                        date = str(r.get('Transaction Date', '')).strip()
+                        amt = clean_amt(r.get('Transaction Amount'))
+                        txid = get_txn_id_from_df_row(r, utr2_col)
+                        
+                        if acc and date and amt is not None:
+                            df_rows.append({
+                                'acc': acc,
+                                'date': date,
+                                'amt': amt,
+                                'txid': txid if txid else '',
+                                'full_row': r
+                            })
+                            # Exact match key
+                            if txid:
+                                df_map[(acc, date, amt)] = txid
+                    
+                    print(f"Found {len(df_rows)} rows in Excel with txn data")
+                    
+                    # Try to match transactions
+                    for t in txns:
+                        key = (t.to_account or '', t.txn_date or '', float(t.amount) if t.amount is not None else None)
+                        
+                        # Try exact match first
+                        if key in df_map:
+                            t.txn_id = df_map[key]
+                            print(f"Exact match found for {t.to_account}: {t.txn_id}")
+                            continue
+                        
+                        # Try fuzzy matching: account + date match with amount tolerance
+                        found = False
+                        to_acc = t.to_account or ''
+                        txn_date = t.txn_date or ''
+                        txn_amt = float(t.amount) if t.amount is not None else None
+                        
+                        for excel_row in df_rows:
+                            # Account and date must match exactly
+                            if excel_row['acc'] == to_acc and excel_row['date'] == txn_date:
+                                # Amount should be very close (within 0.01)
+                                if txn_amt is not None and excel_row['amt'] is not None:
+                                    if abs(txn_amt - excel_row['amt']) < 0.01 and excel_row['txid']:
+                                        t.txn_id = excel_row['txid']
+                                        print(f"Fuzzy match found for {to_acc}: {t.txn_id}")
+                                        found = True
+                                        break
+                                elif excel_row['txid']:
+                                    # If amount is None, match anyway if we have a txid
+                                    t.txn_id = excel_row['txid']
+                                    print(f"Partial match found for {to_acc}: {t.txn_id}")
+                                    found = True
+                                    break
+                        
+                        if not found and txns.index(t) < 3:  # Log first few unmatch to debug
+                            print(f"No match found for txn: acc={to_acc}, date={txn_date}, amt={txn_amt}")
+                    
+                    db.session.commit()
+                    print(f"Updated {len([t for t in txns if t.txn_id])} transactions with txn_id")
+                except Exception as e:
+                    print(f"Error processing missing txn_ids: {e}")
+                    import traceback
+                    traceback.print_exc()
 
         from_to_map = defaultdict(lambda: defaultdict(list))
         incoming_map = defaultdict(list)
@@ -522,7 +1001,12 @@ def graph_data(ack_no):
                             'bank': t.bank_name,
                             'ifsc': t.ifsc_code,
                             'date': t.txn_date,
-                            'txid': t.txn_id,
+                            'txid': (
+                                t.txn_id or next(
+                                    (tx.get('txn_id') for tx in from_to_map[t.from_account][t.to_account] if tx.get('txn_id')),
+                                    None
+                                )
+                            ),
                             'amt': str(t.amount),
                             'disputed': str(t.disputed_amount),
                             'action': t.action_taken,
@@ -826,6 +1310,10 @@ def save_hold_refund():
 
 @app.route('/view_all_complaints')
 def view_all_complaints():
+    try:
+        log_usage('view_all_complaints')
+    except Exception as e:
+        print(f"UsageLog view_all_complaints error: {e}")
     complaints = UploadedFile.query.order_by(UploadedFile.upload_time.desc()).all()
 
     # Build a mapping of filename → list of distinct ACK numbers across all uploads
@@ -964,6 +1452,10 @@ def delete_officer():
 @app.route('/view_analytics')
 # @login_required
 def view_analytics():
+    try:
+        log_usage('view_analytics')
+    except Exception as e:
+        print(f"UsageLog view_analytics error: {e}")
     # Total unique filenames uploaded (regardless of duplicates)
     total_uploaded_files = db.session.query(func.count(func.distinct(UploadedFile.filename))).scalar()
 
@@ -1007,6 +1499,32 @@ def view_analytics():
         officer_uploads=officer_uploads,
         frequent_ifsccodes=frequent_ifsccodes
     )
+@app.route('/download_logs')
+def download_logs():
+    if 'username' not in session:
+        return redirect('/login')
+    try:
+        now = datetime.now(timezone.utc)
+        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = start_of_day + timedelta(days=1)
+        logs = UsageLog.query.filter(UsageLog.timestamp >= start_of_day, UsageLog.timestamp < end_of_day).order_by(UsageLog.timestamp.asc()).all()
+        lines = []
+        for l in logs:
+            ts_ist = l.timestamp.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30)))
+            ts_str = ts_ist.strftime('%Y-%m-%d %H:%M:%S')
+            u = l.username or ''
+            r = l.role or ''
+            a = l.action or ''
+            f = l.filename or ''
+            an = l.ack_no or ''
+            lines.append(f"{ts_str} | {u}({r}) | {a} | {f} | {an}")
+        content = "\n".join(lines) if lines else "No logs for today."
+        buf = io.BytesIO(content.encode('utf-8'))
+        fname = f"usage_logs_{start_of_day.astimezone(timezone(timedelta(hours=5, minutes=30))).strftime('%Y-%m-%d')}.txt"
+        log_usage('download_logs')
+        return send_file(buf, mimetype='text/plain', as_attachment=True, download_name=fname)
+    except Exception as e:
+        return f"Failed to generate logs: {e}", 500
 
 @app.route('/delete_complaint', methods=['POST'])
 def delete_complaint():

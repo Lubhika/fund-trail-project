@@ -90,5 +90,13 @@ class Complaint(db.Model):
     uploaded_by = db.Column(db.Integer, db.ForeignKey('user.id'))
     upload_time = db.Column(db.DateTime)
 
+class UsageLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(100))
+    role = db.Column(db.String(50))
+    action = db.Column(db.String(100))
+    filename = db.Column(db.String(255))
+    ack_no = db.Column(db.String(100))
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 
